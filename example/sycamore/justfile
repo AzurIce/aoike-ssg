@@ -1,2 +1,2 @@
 build-vault:
-    cargo run --bin aoike --vault doc-src -o static/vault
+    cargo run -p aoike --bin aoike --features build -- doc-src -o static/vault

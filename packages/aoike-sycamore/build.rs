@@ -16,19 +16,19 @@ fn main() {
     println!("cargo:rerun-if-changed=css/uno.scss");
 
     // Calculate SHA1 hash of css directory
-    let sha1_hash = calculate_dir_sha1("css").expect("failed to calculate css directory sha1");
-    println!("CSS directory SHA1: {}", sha1_hash);
+    // let sha1_hash = calculate_dir_sha1("css").expect("failed to calculate css directory sha1");
+    // println!("CSS directory SHA1: {}", sha1_hash);
 
-    zip_dir(
-        &mut walkdir::WalkDir::new("css")
-            .into_iter()
-            .filter_map(|e| e.ok()),
-        &Path::new("css"),
-        File::create("css.zip").expect("failed to create css.zip"),
-        zip::CompressionMethod::Deflated,
-        &sha1_hash,
-    )
-    .expect("failed to zip css/");
+    // zip_dir(
+    //     &mut walkdir::WalkDir::new("css")
+    //         .into_iter()
+    //         .filter_map(|e| e.ok()),
+    //     &Path::new("css"),
+    //     File::create("css.zip").expect("failed to create css.zip"),
+    //     zip::CompressionMethod::Deflated,
+    //     &sha1_hash,
+    // )
+    // .expect("failed to zip css/");
 }
 
 fn calculate_dir_sha1(dir: &str) -> Result<String, anyhow::Error> {

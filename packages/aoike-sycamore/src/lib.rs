@@ -9,7 +9,7 @@ pub mod layout {
     pub mod base;
 }
 
-use aoike::{Article, Id, Vault};
+use aoike::{Article, ExportedVault, Id};
 #[cfg(target_arch = "wasm32")]
 use gloo_net::http::Request;
 use sycamore::prelude::*;
@@ -45,7 +45,7 @@ pub struct ConfigContext {
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn fetch_vault(base_url: &str) -> Result<Vault, String> {
+async fn fetch_vault(base_url: &str) -> Result<ExportedVault, String> {
     let url = format!("{}/vault.json", base_url.trim_end_matches('/'));
     Request::get(&url)
         .send()
@@ -57,7 +57,7 @@ async fn fetch_vault(base_url: &str) -> Result<Vault, String> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-async fn fetch_vault(_base_url: &str) -> Result<Vault, String> {
+async fn fetch_vault(_base_url: &str) -> Result<ExportedVault, String> {
     Err("Fetching vault is not supported on non-WASM targets".to_string())
 }
 
@@ -141,7 +141,7 @@ pub fn AoikeApp(config: ConfigContext) -> View {
 #[component]
 pub fn Index() -> View {
     let config = use_context::<ConfigContext>();
-    let vault = use_context::<Vault>();
+    let vault = use_context::<ExportedVault>();
 
     let base_url = config
         .vault_base_url
@@ -171,7 +171,7 @@ pub fn Index() -> View {
                     }
                     a(
                         class="underline hover:underline-gray-400",
-                        href=format!("/posts/{}", blog.id)
+                        href=format!("/posts/{}", blog.id.to_string())
                     ) {
                         (blog.title.clone())
                     }
@@ -286,14 +286,20 @@ pub fn Hero() -> View {
 
 #[component]
 pub fn Posts() -> View {
-    let vault = use_context::<Vault>();
+    let vault = use_context::<ExportedVault>();
     view! {
         h1 { "所有文章" }
-        (vault.posts.articles.iter().cloned().map(|post| {
-            view! {
-                PostCard(post=post)
-            }
-        }).collect::<Vec<_>>())
+        (vault
+            .posts
+            .articles
+            .iter()
+            .cloned()
+            .map(|post| {
+                view! {
+                    PostCard(post=post)
+                }
+            })
+            .collect::<Vec<_>>())
     }
 }
 
@@ -304,7 +310,7 @@ pub fn PostCard(post: Article) -> View {
         div(
             class="w-full flex flex-col gap-2 p-2 rounded border border-slate-200 hover:border-slate-400"
         ) {
-            a(href=format!("/posts/{}", post.id.clone())) {
+            a(href=format!("/posts/{}", post.id.to_string())) {
                 h2 { (post.title.clone()) }
             }
             div(class="flex gap-2") {
@@ -330,16 +336,21 @@ pub fn PostCard(post: Article) -> View {
 
 #[component(inline_props)]
 pub fn Post(slug: String) -> View {
-    let id = Id::new(slug);
+    let id = Id::new(slug.clone());
     let config = use_context::<ConfigContext>();
-    let vault = use_context::<Vault>();
+    let vault = use_context::<ExportedVault>();
 
     // Verify slug exists in vault to avoid unnecessary fetch or show 404 earlier?
     // But fetches are cheapish, maybe just fetch.
     // Actually, we need to know the path to fetch.
     // For posts, it's articles/posts/{slug}.json
 
-    let exists = vault.posts.articles.iter().any(|p| p.id == id);
+    let exists_slug = slug.clone();
+    let exists = vault
+        .posts
+        .articles
+        .iter()
+        .any(|p| p.id.to_string() == exists_slug);
     if !exists {
         navigate("/404");
         return view! {};
