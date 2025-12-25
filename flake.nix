@@ -9,8 +9,17 @@
     typst.url = "github:typst/typst";
   };
 
-  outputs = { nixpkgs, rust-overlay, flake-utils, dioxus-cli, typst, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      nixpkgs,
+      rust-overlay,
+      flake-utils,
+      dioxus-cli,
+      typst,
+      ...
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs { inherit system overlays; };
@@ -18,7 +27,8 @@
           extensions = [ "rust-src" ];
           targets = [ "wasm32-unknown-unknown" ];
         };
-      in {
+      in
+      {
         devShells.default = pkgs.mkShell {
           # prioritize system clang, see https://github.com/zed-industries/zed/issues/7036
           # https://github.com/gfx-rs/gfx/issues/2309
@@ -31,11 +41,14 @@
           packages = [
             typst.packages.${system}.default
             dioxus-cli.packages.${system}.dioxus-cli
-          ] ++ (with pkgs; [
+          ]
+          ++ (with pkgs; [
             bun
             wasm-bindgen-cli
             libiconv
+            trunk
           ]);
         };
-      });
+      }
+    );
 }
