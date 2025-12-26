@@ -7,7 +7,7 @@ pub mod layout {
     pub mod base;
 }
 
-use aoike::data::{PostMeta, VaultData};
+use aoike::data::{NodeMeta, PostMeta, VaultData};
 use sycamore::prelude::*;
 use sycamore::web::Suspense;
 use sycamore_router::{HistoryIntegration, Route, Router, navigate};
@@ -25,6 +25,10 @@ enum AppRoutes {
     Posts,
     #[to("/posts/<slug>")]
     Post { slug: String },
+    #[to("/notes")]
+    Notes,
+    #[to("/notes/<path..>")]
+    Note { path: Vec<String> },
     #[not_found]
     NotFound,
 }
@@ -67,7 +71,7 @@ pub async fn AoikeApp(config: ConfigContext) -> View {
                                     view! {
                                         Header()
 
-                                        main(class="max-w-[80ch] w-full m-x-auto flex flex-col items-center p-8 gap-4") {
+                                        main(class="max-w-[100ch] w-full m-x-auto flex flex-col items-center p-8 gap-4") {
                                             (match route.get_clone() {
                                                 AppRoutes::Index => view! {
                                                     Index()
@@ -77,6 +81,12 @@ pub async fn AoikeApp(config: ConfigContext) -> View {
                                                 },
                                                 AppRoutes::Post { slug } => view! {
                                                     Post(slug=slug)
+                                                },
+                                                AppRoutes::Notes => view! {
+                                                    Notes()
+                                                },
+                                                AppRoutes::Note { path } => view! {
+                                                    Note(path=path)
                                                 },
                                                 AppRoutes::NotFound => view! {
                                                     NotFoundPage()
@@ -137,6 +147,19 @@ pub async fn Index() -> View {
         })
         .collect::<Vec<View>>();
 
+    let content_view = match index_article {
+        Ok(article) => {
+            let html = article.content.clone();
+            view! {
+                div(dangerously_set_inner_html=html)
+            }
+        }
+        Err(e) => {
+            let error_msg = format!("Error loading content: {}", e);
+            view! { (error_msg) }
+        }
+    };
+
     view! {
         Hero()
 
@@ -147,20 +170,7 @@ pub async fn Index() -> View {
             }
             hr {}
             Suspense(fallback=move || view! { "Loading content..." }) {
-                (
-                    match &index_article {
-                        Ok(article) => {
-                            let html = article.content.clone();
-                            view! {
-                                div(dangerously_set_inner_html=html)
-                            }
-                        },
-                        Err(e) => {
-                            let error_msg = format!("Error loading content: {}", e);
-                            view! { (error_msg) }
-                        },
-                    }
-                )
+                (content_view)
             }
         }
 
@@ -316,29 +326,144 @@ pub async fn Post(slug: String) -> View {
 
     let giscus_options = config.giscus_options.clone();
 
+    let content_view = match article {
+        Ok(article) => {
+            let html = article.content.clone();
+            let giscus_opts = giscus_options.clone();
+            view! {
+                div(class="markdown w-full") {
+                    h1 { (article.meta.title.clone()) }
+                    div(dangerously_set_inner_html=html)
+                }
+
+                (giscus_opts.clone().map(|options| {
+                    view! { components::giscus::Giscus(options=options) }
+                }))
+            }
+        }
+        Err(e) => {
+            let error_msg = format!("Error loading article: {}", e);
+            view! { (error_msg) }
+        }
+    };
+
     view! {
         Suspense(fallback=move || view! { "Loading article..." }) {
-             (
-                match &article {
-                    Ok(article) => {
-                        let html = article.content.clone();
-                        let giscus_opts = giscus_options.clone();
-                        view! {
-                            div(class="markdown w-full") {
-                                div(dangerously_set_inner_html=html)
-                            }
+             (content_view)
+        }
+    }
+}
 
-                            (giscus_opts.clone().map(|options| {
-                                view! { components::giscus::Giscus(options=options) }
-                            }))
-                        }
-                    },
-                    Err(e) => {
-                        let error_msg = format!("Error loading article: {}", e);
-                        view! { (error_msg) }
-                    },
+#[component]
+pub fn Notes() -> View {
+    view! {
+        Note(path=vec![])
+    }
+}
+
+#[component(inline_props)]
+pub async fn Note(path: Vec<String>) -> View {
+    let config = use_context::<ConfigContext>();
+    let vault = use_context::<VaultData>();
+
+    let mut ids = vec!["notes".to_string()];
+    ids.extend(path.clone());
+
+    let fetch_path = ids.join("/");
+
+    let base_url = config
+        .vault_base_url
+        .clone()
+        .unwrap_or_else(|| "/vault".to_string());
+
+    let article = fetch_article(&base_url, &fetch_path).await;
+    let giscus_options = config.giscus_options.clone();
+
+    let content_view = match article {
+        Ok(article) => {
+            let html = article.content.clone();
+            let giscus_opts = giscus_options.clone();
+            view! {
+                div(class="markdown w-full") {
+                    h1 { (article.meta.title.clone()) }
+                    div(dangerously_set_inner_html=html)
                 }
-             )
+                (giscus_opts.clone().map(|options| {
+                    view! { components::giscus::Giscus(options=options) }
+                }))
+            }
+        }
+        Err(_) => {
+            if path.is_empty() {
+                view! {
+                    div(class="markdown") {
+                        h1 { "Notes" }
+                        p { "Select a note from the sidebar." }
+                    }
+                }
+            } else {
+                view! { "Note not found or no content." }
+            }
+        }
+    };
+
+    let notes_nodes = vault.notes.clone();
+    let current_path_clone = ids.clone();
+
+    view! {
+        div(class="flex w-full gap-8 items-start") {
+            aside(class="w-64 flex-shrink-0 hidden md:block") {
+                nav(class="sticky top-4") {
+                    NoteTree(nodes=notes_nodes, current_path=current_path_clone)
+                }
+            }
+
+            div(class="flex-grow min-w-0") {
+                Suspense(fallback=move || view! { "Loading note..." }) {
+                    (content_view)
+                }
+            }
+        }
+    }
+}
+
+#[component(inline_props)]
+pub fn NoteTree(nodes: Vec<NodeMeta>, current_path: Vec<String>) -> View {
+    view! {
+        ul(class="flex flex-col gap-1") {
+            (nodes.iter().map(|node| {
+                let _is_active = current_path.starts_with(&node.ids);
+                let is_exact = current_path == node.ids;
+
+                let href = format!("/{}", node.ids.join("/"));
+                let title = node.title.clone();
+                let children = node.children.clone();
+                let next_path = current_path.clone();
+
+                view! {
+                    li {
+                        div(class=format!("flex items-center gap-1 py-1 px-2 rounded transition-colors {}",
+                            if is_exact { "bg-slate-100 font-bold text-primary" } else { "hover:bg-slate-50 text-slate-600" }
+                        )) {
+                            a(href=href, class="flex-grow truncate block") {
+                                (title)
+                            }
+                        }
+
+                        (if !children.is_empty() {
+                            let children = children.clone();
+                            let next_path = next_path.clone();
+                            view! {
+                                div(class="pl-3 border-l border-slate-100 ml-2") {
+                                    NoteTree(nodes=children, current_path=next_path)
+                                }
+                            }
+                        } else {
+                            view! {}
+                        })
+                    }
+                }
+            }).collect::<Vec<_>>())
         }
     }
 }
