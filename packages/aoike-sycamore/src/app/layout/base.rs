@@ -1,6 +1,6 @@
 use sycamore::prelude::*;
 
-use crate::ConfigContext;
+use crate::app::ConfigContext;
 
 #[component]
 pub fn Header() -> View {

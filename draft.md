@@ -1,80 +1,160 @@
-## 实体定义
+# Aoike Architecture & Design Specification
 
-### Article
+This document outlines the architecture, data models, and build processes for the Aoike static site generator.
 
-Article 是内容的基本单元。它可以来源于单文件，也可以来源于目录。
+## 1. Core Entities
 
-1.  **单文件 Article**: `path/to/<name>.(md|typ)`
-    -   **ID**: `<name>` (文件名，不含扩展名)
-    -   **Path**: `path/to` (父目录路径，相对于根)
-    -   **条件**: `<name>` 不为 `index` 或 `main`。
+The content model is built around **Articles** and **Containers**.
 
-2.  **目录 Article (Main)**: `path/to/<name>/main.(md|typ)`
-    -   **ID**: `<name>` (父目录名)
-    -   **Path**: `path/to` (父目录的父目录路径，相对于根)
-    -   **定义**: 任何包含 `main.(md|typ)` 的目录都被视为一个**目录 Article**。
-    -   **行为**: 扫描器将该目录视为一个原子实体，**不会**扫描该目录下的其他 Article 或子目录。该目录下的其他文件可作为资源被引用。
+### 1.1 Article
+An Article is the fundamental unit of content. It can be defined in two ways:
 
-3.  **索引 Article (Index)**: `path/to/<name>/index.(md|typ)`
-    -   **ID**: `<name>` (父目录名)
-    -   **Path**: `path/to` (父目录的父目录路径，相对于根)
-    -   **定义**: 位于普通目录（非目录 Article）下的 `index` 文件。
-    -   **行为**: 它代表了该目录节点本身的 Article 内容（如章节介绍）。
+1.  **Single-file Article**: `path/to/<name>.(md|typ)`
+    -   **ID**: `<name>` (filename without extension).
+    -   **Condition**: `<name>` is not `index` or `main`.
+    -   **Example**: `posts/hello.md` -> ID: `hello`.
 
-### Directory (Container)
+2.  **Directory Article**: `path/to/<name>/main.(md|typ)`
+    -   **ID**: `<name>` (the parent directory name).
+    -   **Definition**: Any directory containing a `main.(md|typ)` file.
+    -   **Behavior**: The scanner treats this directory as an atomic Article. It does **not** recursively scan for other articles inside it. Other files in the directory are treated as assets.
+    -   **Example**: `notes/math/main.md` -> The article represents the `math` directory.
 
-任何**不包含** `main.(md|typ)` 的目录都被视为**容器目录**（Subdirectory）。
+3.  **Index Article**: `path/to/<name>/index.(md|typ)`
+    -   **Role**: Provides metadata (title, summary, dates) and content for a **Container**.
+    -   **Example**: `posts/tech/index.md` -> Provides content for the `tech` category.
 
--   容器目录会被递归扫描。
--   容器目录中可以包含：
-    -   普通 Article 文件
-    -   目录 Article (包含 main 的子目录)
-    -   索引 Article (`index` 文件)
-    -   更深层的容器目录
--   **变化**: 不再强制要求目录必须包含 `index` 才是有效子目录。任何普通目录都会被遍历。
+### 1.2 Container (Directory)
+A **Container** is a directory that holds Articles and sub-Containers.
 
-## 结构逻辑
+-   **Definition**: Any directory that does **not** contain a `main.(md|typ)` file.
+-   **Behavior**: Recursively scanned for children.
+-   **Metadata**: Can optionally contain an `index.(md|typ)` file to define its title and summary. If missing, the directory name is used as the title.
 
-整个 vault 可以被视为一个 *容器目录*，不过其中有两个约定的目录：
--   `posts` 目录，用于存放文章。
--   `notes` 目录，用于存放笔记。
+## 2. Vault Structure
 
-### Posts
+The source directory (Vault) is organized into two primary sections with distinct behaviors.
 
-`posts` 目录下的所有 Article（包括普通文件、目录 Article、以及各级容器目录中的索引 Article）都被收集到一个扁平的列表中。
-嵌套结构完全通过 Article 的 `path` 属性体现。
+### 2.1 Posts (`posts/`)
+-   **Structure**: Flattened list.
+-   **Behavior**: All Articles found under `posts/` (at any depth) are collected into a single list.
+-   **Sorting**: Sorted by creation date (descending).
+-   **Use Case**: Blogs, news feeds, chronological streams.
+-   **Hierarchy**: Preserved only in the `ids` path metadata, not in the output structure.
 
-### Notes
+### 2.2 Notes (`notes/`)
+-   **Structure**: Hierarchical tree.
+-   **Behavior**: Preserves the directory structure of the source.
+-   **Sorting**: Sorted by ID (slug) ascending.
+-   **Use Case**: Wikis, documentation, knowledge bases.
 
-会保留层级关系。要注意的是第一层级一定是 *容器目录*，在前端展示的时候可能会以第一层级作为不同的 Note。
+## 3. Internal Architecture
 
-## 目录结构示例
+The Rust implementation separates internal representation from the exported data protocol.
 
-```sh
-aoike_vault/
-├── posts/
-│   ├── index.md            # Article("posts"), path=[] (Posts 根索引)
-│   ├── hello.md            # Article("hello"), path=[]
-│   ├── tech/               # 容器目录
-│   │   ├── index.md        # Article("tech"), path=[] (tech 节点索引)
-│   │   ├── rust.md         # Article("rust"), path=["tech"]
-│   │   └── deep/           # 目录 Article (包含 main)
-│   │       ├── main.md     # Article("deep"), path=["tech"]
-│   │       └── image.png   # 资源文件，不被视为 Article
-│   └── misc/               # 容器目录 (无 index)
-│       └── random.md       # Article("random"), path=["misc"]
-├── notes/
-│   ├── index.md            # Article("notes"), path=[]
-│   ├── math/               # 容器目录 同时是一个
-│   │   ├── index.md        # Article("math")
-│   │   ├── algebra.md      # Article("algebra")
-│   │   └── calculus/       # 容器目录
-│   │       └── limit.md    # Article("limit")
-│   └── ...
-└── ...
+### 3.1 Pathing: `EntityPath`
+To unify path handling and ID generation, every entity possesses an `EntityPath`.
+
+```rust
+pub struct EntityPath {
+    /// The chain of slugified IDs from the vault root to this entity.
+    /// e.g., ["posts", "tech", "rust"]
+    pub ids: Vec<Id>,
+
+    /// The absolute path to the vault root on disk.
+    pub vault_root: PathBuf,
+
+    /// The relative path from the vault root to the source file/directory.
+    /// e.g., "posts/tech/rust.md"
+    pub path: RelativePathBuf
+}
 ```
 
-## 文件名 & 标题 & Slug
+### 3.2 Identifiers: `Id`
+-   **Type**: `pub struct Id(pub String)`
+-   **Value**: The slugified version of the filename or directory name.
 
-规则保持不变：
-原始文件名 -> slugify -> json 文件名 / ID。
+### 3.3 Node Types
+-   **`Article`**: Contains `EntityPath`, title, HTML content (summary & full), timestamps.
+-   **`Container`**: Contains `EntityPath`, optional `index` Article, and a list of child `Node`s.
+-   **`Node`**: Enum of `Article | Container`.
+
+## 4. Data Protocol (Export)
+
+The build process generates a static JSON API consumed by the frontend.
+
+### 4.1 Manifest: `vault.json`
+A lightweight manifest containing the structure and metadata of the entire site, but **excluding** full content.
+
+```json
+{
+  "posts": [ ...list of PostMeta... ],
+  "notes": [ ...tree of NodeMeta... ]
+}
+```
+
+### 4.2 Article Details: `articles/**/*.json`
+Each article is exported to a separate JSON file containing its full content. The path mirrors the `ids` chain.
+
+-   **Path**: `articles/<id_0>/<id_1>/.../<id_n>.json`
+-   **Example**: An article with ids `["posts", "tech", "rust"]` is saved to `articles/posts/tech/rust.json`.
+
+### 4.3 JSON Schemas
+
+**`PostMeta`** (Used in `vault.posts` list)
+```rust
+pub struct PostMeta {
+    pub id: String,          // The entity's own slug
+    pub ids: Vec<String>,    // Full chain of slugs [root, ..., id]
+    pub path: String,        // Original source path relative to vault
+    pub title: String,
+    pub summary: String,     // HTML summary
+    pub created: i64,        // Unix timestamp
+    pub updated: i64,        // Unix timestamp
+}
+```
+
+**`NodeMeta`** (Used in `vault.notes` tree)
+```rust
+pub struct NodeMeta {
+    pub id: String,
+    pub ids: Vec<String>,
+    pub path: String,
+    pub title: String,
+    pub summary: Option<String>,
+    pub created: i64,
+    pub updated: i64,
+    pub children: Vec<NodeMeta>, // Empty for leaf articles
+}
+```
+
+**`ArticleDetail`** (Used in individual JSON files)
+```rust
+pub struct ArticleDetail {
+    // Flattens PostMeta fields here
+    pub id: String,
+    pub ids: Vec<String>,
+    pub path: String,
+    pub title: String,
+    pub summary: String,
+    pub created: i64,
+    pub updated: i64,
+    
+    // The full content
+    pub content: String, 
+}
+```
+
+## 5. Build Process
+
+1.  **Scan**:
+    -   Recursively walk `posts/` to build a flat list of Articles.
+    -   Recursively walk `notes/` to build a tree of Containers and Articles.
+    -   Construct `EntityPath` for every node, calculating `ids` based on the directory traversal stack.
+2.  **Parse**:
+    -   Convert Markdown/Typst to HTML.
+    -   Extract H1 as title (fallback to filename).
+    -   Generate summary (first 200 chars or specific logic).
+3.  **Generate**:
+    -   Serialize the internal `Vault` structure to `vault.json` (using `PostMeta` and `NodeMeta`).
+    -   Serialize every `Article` to its specific `.json` file (using `ArticleDetail`).

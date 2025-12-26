@@ -1,1 +1,0 @@
-The reason of putting the docsgen module in an separate crate is to make dioxus reload work. (Don't know why build.rs doesn't work in the same crate.)

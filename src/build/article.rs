@@ -36,11 +36,10 @@ impl ArticleSource {
         }
     }
 
-    pub fn to_article(&self, id: crate::Id, path: Vec<crate::Id>) -> crate::Article {
+    pub fn to_article(&self, entity_path: crate::EntityPath) -> crate::Article {
         crate::Article {
             title: self.title.clone(),
-            id,
-            path,
+            entity_path,
             summary_html: self.summary_html.clone(),
             content_html: self.content_html.clone(),
             created: self.entity.created,

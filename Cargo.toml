@@ -16,14 +16,9 @@ aoike-sycamore = { path = "packages/aoike-sycamore" }
 [features]
 default = []
 build = [
-    "dep:quote",
-    "dep:proc-macro2",
-    "dep:prettyplease",
-    "dep:syn",
     "dep:walkdir",
     "dep:pulldown-cmark",
     "dep:regex",
-    "dep:relative-path",
 ]
 
 [dependencies]
@@ -31,17 +26,16 @@ time = { version = "0.3.43", features = ["wasm-bindgen", "serde"] }
 anyhow = "1.0.100"
 slug = "0.1.6"
 
-quote = { version = "1.0.40", optional = true }
-proc-macro2 = { version = "1.0.101", optional = true }
-prettyplease = { version = "0.2.23", optional = true }
-syn = { version = "2.0", features = ["full"], optional = true }
 walkdir = { version = "2.5.0", optional = true }
 pulldown-cmark = { version = "0.13.0", optional = true }
 regex = { version = "1.11.3", optional = true }
-relative-path = { version = "2.0.1", optional = true }
+relative-path = { version = "2.0.1", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.147"
 clap = { version = "4.5", features = ["derive"] }
 
 [build-dependencies]
 rsass = "0.29.2"
+
+[dev-dependencies]
+tempfile = "3.24.0"

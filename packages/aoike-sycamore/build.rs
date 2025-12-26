@@ -31,6 +31,7 @@ fn main() {
     // .expect("failed to zip css/");
 }
 
+#[allow(dead_code)]
 fn calculate_dir_sha1(dir: &str) -> Result<String, anyhow::Error> {
     let mut hasher = Sha1::new();
     let mut entries: Vec<_> = walkdir::WalkDir::new(dir)
@@ -56,6 +57,7 @@ fn calculate_dir_sha1(dir: &str) -> Result<String, anyhow::Error> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+#[allow(dead_code)]
 fn zip_dir<T>(
     it: &mut dyn Iterator<Item = walkdir::DirEntry>,
     prefix: &Path,
