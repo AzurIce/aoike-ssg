@@ -3,13 +3,13 @@ use serde::{Deserialize, Serialize};
 /// The root data structure exported to `vault.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VaultData {
-    pub posts: Vec<PostMeta>,
+    pub posts: Vec<ArticleMeta>,
     pub notes: Vec<NodeMeta>,
 }
 
 /// Metadata for a post, used in lists.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PostMeta {
+pub struct ArticleMeta {
     pub id: String,
     pub ids: Vec<String>,
     pub path: String,
@@ -40,6 +40,6 @@ pub struct NodeMeta {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArticleDetail {
     #[serde(flatten)]
-    pub meta: PostMeta,
+    pub meta: ArticleMeta,
     pub content: String,
 }

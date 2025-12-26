@@ -65,8 +65,8 @@ pub struct Article {
 }
 
 impl Article {
-    pub fn to_meta(&self) -> data::PostMeta {
-        data::PostMeta {
+    pub fn to_meta(&self) -> data::ArticleMeta {
+        data::ArticleMeta {
             id: self.entity_path.id().0.clone(),
             ids: self.entity_path.ids.iter().map(|id| id.0.clone()).collect(),
             path: self.entity_path.path.as_str().to_string(),
@@ -148,7 +148,8 @@ pub struct Vault {
 impl Vault {
     pub fn export(&self) -> data::VaultData {
         // 1. Flatten posts
-        let mut posts: Vec<data::PostMeta> = self.posts.articles().map(|a| a.to_meta()).collect();
+        let mut posts: Vec<data::ArticleMeta> =
+            self.posts.articles().map(|a| a.to_meta()).collect();
 
         posts.sort_by(|a, b| b.created.cmp(&a.created));
 
