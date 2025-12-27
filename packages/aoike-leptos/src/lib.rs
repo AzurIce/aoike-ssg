@@ -19,6 +19,7 @@ pub mod routes {
 }
 
 use leptos::prelude::*;
+use leptos_meta::*;
 use leptos_router::{
     components::{Route, Router, Routes},
     path,
@@ -56,8 +57,14 @@ pub fn AoikeApp(config: ConfigContext) -> impl IntoView {
         async move { fetch_vault(&base_url).await.ok() }
     });
 
-    view! {
+    provide_meta_context();
+    let (name_main, main) = stylers::style_sheet_str!("packages/aoike-leptos/css/main.css");
+    let (name_uno, uno) = stylers::style_sheet_str!("packages/aoike-leptos/css/uno.css");
+
+    view! {class = ([name_main, name_uno]),
         <Router>
+            <Style> {main} </Style>
+            <Style> {uno} </Style>
             <Header />
             <main class="max-w-[100ch] w-full m-x-auto flex flex-col items-center p-8 gap-4">
                 <Suspense fallback=move || {
