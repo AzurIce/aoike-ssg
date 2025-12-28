@@ -1,5 +1,0 @@
-## Serve
-
-```
-trunk serve
-```

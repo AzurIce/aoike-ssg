@@ -5,13 +5,10 @@ authors = ["AzurIce <973562770@qq.com>"]
 edition = "2024"
 
 [workspace]
-# members = ["example/*", "packages/*"]
 members = ["examples/leptos", "packages/aoike-leptos"]
 
 [workspace.dependencies]
 aoike = { path = "." }
-# aoike-dioxus = { path = "packages/aoike-dioxus" }
-# aoike-sycamore = { path = "packages/aoike-sycamore" }
 aoike-leptos = { path = "packages/aoike-leptos" }
 
 [features]
