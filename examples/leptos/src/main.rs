@@ -8,7 +8,7 @@ pub fn main() {
         title: Some("Aoike Leptos Example".to_string()),
         desc: Some("An example site built with Aoike and Leptos".to_string()),
         // Using a placeholder avatar
-        avatar: Some("avatar.jpg".to_string()),
+        avatar: Some("/static/avatar.jpg".to_string()),
         github_owner: Some("aoike".to_string()),
         github_repo: Some("aoike".to_string()),
         vault_base_url: Some("/vault".to_string()),

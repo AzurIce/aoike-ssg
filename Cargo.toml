@@ -6,7 +6,7 @@ edition = "2024"
 
 [workspace]
 # members = ["example/*", "packages/*"]
-members = ["example/leptos", "packages/aoike-leptos"]
+members = ["examples/leptos", "packages/aoike-leptos"]
 
 [workspace.dependencies]
 aoike = { path = "." }

@@ -1,0 +1,2 @@
+[watch]
+watch = ["./", "../doc-src", "../../packages/aoike-leptos"]

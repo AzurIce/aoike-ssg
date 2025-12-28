@@ -124,7 +124,7 @@ pub fn NoteTree(
                                     },
                                 )
                             }>
-                                <A href=href>{title}</A>
+                                <A href=href {..} class="flex-grow truncate block">{title}</A>
                             </div>
 
                             {if !children.is_empty() {

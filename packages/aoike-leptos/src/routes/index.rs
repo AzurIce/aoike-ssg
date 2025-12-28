@@ -42,8 +42,7 @@ pub fn Index() -> impl IntoView {
                                         created.day(),
                                     )}
                                 </span>
-                                // class="underline hover:underline-gray-400"
-                                <A href=format!("/posts/{}", blog.id)>{blog.title}</A>
+                                <A href=format!("/posts/{}", blog.id) {..} class="underline hover:underline-gray-400">{blog.title}</A>
                             </li>
                         }
                     })
@@ -121,14 +120,14 @@ pub fn Hero() -> impl IntoView {
                         .clone()
                         .map(|owner| {
                             view! {
-                                <a
+                                <A
                                     href=format!("https://github.com/{}", owner)
                                     target="_blank"
-                                    rel="noreferrer"
+                                    {..}
                                     class="size-8 gap-1 nav-btn"
                                 >
                                     <div class="i-fa6-brands-github text-xl"></div>
-                                </a>
+                                </A>
                             }
                         })}
                     {config

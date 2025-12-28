@@ -99,6 +99,7 @@ impl Parser for MarkdownArticleParser {
         let parser = pulldown_cmark::Parser::new(&content);
         let mut content_html = String::new();
         pulldown_cmark::html::push_html(&mut content_html, parser);
+        let content_html = utils::remove_html_tag(&content_html, &["h1"]);
 
         Ok(ArticleSource::from_html_entity(content_html, entity))
     }
