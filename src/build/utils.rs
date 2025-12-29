@@ -4,6 +4,8 @@ use regex::Regex;
 use relative_path::PathExt;
 use time::UtcDateTime;
 
+use crate::{Id, Ids};
+
 pub fn patch_file(
     path: impl AsRef<Path>,
     inject: &str,
@@ -75,7 +77,7 @@ pub fn rewrite_html_links(
     article: &mut crate::Article,
     vault_root: &Path,
     articles_url: &str,
-) -> Vec<PathBuf> {
+) -> Vec<(PathBuf, Ids)> {
     let mut assets = Vec::new();
     // Match src="..." and href="..."
     // We use a simple regex that captures the attribute name and the value
@@ -106,10 +108,19 @@ pub fn rewrite_html_links(
                     .join(val);
 
                 // Calculate relative path from vault root
-                if let Ok(rel_path) = abs_asset_path.relative_to(vault_root) {
-                    let new_url = format!("{}/{}", articles_url.trim_end_matches('/'), rel_path);
+                if let Ok(path_in_vault) = abs_asset_path.relative_to(vault_root) {
+                    let mut ids = Ids::from(path_in_vault.parent().unwrap().as_str());
+                    ids.push(Id::new(path_in_vault.file_stem().unwrap()));
 
-                    assets.push(abs_asset_path);
+                    let url = if let Some(ext) = path_in_vault.extension() {
+                        format!("{ids}.{ext}")
+                    } else {
+                        format!("{ids}.jpg")
+                    };
+
+                    let new_url = format!("{}/{}", articles_url.trim_end_matches('/'), url);
+
+                    assets.push((abs_asset_path, ids));
                     return format!(r#"{}="{}""#, attr, new_url);
                 }
             }

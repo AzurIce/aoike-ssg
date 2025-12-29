@@ -2,8 +2,9 @@
 pub mod build;
 pub mod data;
 
-use std::fmt::Display;
+use std::ops::DerefMut;
 use std::path::PathBuf;
+use std::{fmt::Display, ops::Deref};
 
 pub use time;
 use time::UtcDateTime;
@@ -29,12 +30,68 @@ impl Id {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Ids(Vec<Id>);
+
+impl Ids {
+    pub fn new(ids: &[Id]) -> Self {
+        Self(ids.to_vec())
+    }
+    pub fn parent(&self) -> Option<Ids> {
+        if self.len() <= 1 {
+            None
+        } else {
+            Some(Self(self.0[1..].to_vec()))
+        }
+    }
+}
+
+impl<S: AsRef<str>> From<S> for Ids {
+    fn from(value: S) -> Self {
+        Self(
+            value
+                .as_ref()
+                .trim_start_matches("/")
+                .trim_end_matches("/")
+                .split("/")
+                .map(|s| Id(slug::slugify(s)))
+                .collect::<Vec<_>>(),
+        )
+    }
+}
+
+impl Deref for Ids {
+    type Target = Vec<Id>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Ids {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Display for Ids {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, id) in self.iter().enumerate() {
+            if i > 0 {
+                write!(f, "/")?;
+            }
+            write!(f, "{}", id)?;
+        }
+        Ok(())
+    }
+}
+
 // MARK: EntityPath
 /// Path information for an entity
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EntityPath {
     /// The chain of IDs from the vault root to this entity
-    pub ids: Vec<Id>,
+    pub ids: Ids,
     /// The root directory of the vault (absolute path)
     pub vault_root: PathBuf,
     /// The relative path from vault root to the source file/directory
@@ -232,6 +289,9 @@ mod test {
         assert_eq!(id_a.0, "niu-cow-bi");
         let id_b = Id::new("?牛!🐮#逼$");
         assert_eq!(id_b.0, "niu-cow-bi");
+        assert_eq!(id_a, id_b);
+        let id_b = Id::new("ra as [d s ]e$");
+        assert_eq!(id_b.0, "ra-as-d-s-e");
         assert_eq!(id_a, id_b)
     }
 }

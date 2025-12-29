@@ -2,7 +2,7 @@ pub mod article;
 pub mod utils;
 
 use crate::build::article::ArticleSource;
-use crate::{EntityPath, Id};
+use crate::{EntityPath, Id, Ids};
 use relative_path::{PathExt, RelativePathBuf};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -61,7 +61,7 @@ pub fn build_vault(root_dir: impl AsRef<Path>) -> crate::Vault {
     let notes_dir = root.join("notes");
 
     // Helper to create EntityPath
-    let make_path = |ids: Vec<Id>, abs_path: &Path| {
+    let make_path = |ids: Ids, abs_path: &Path| {
         let rel_path = pathdiff::diff_paths(abs_path, &root).unwrap();
         let rel_path_str = rel_path.to_string_lossy().to_string();
         // Normalize path separators to forward slashes for RelativePathBuf
@@ -75,7 +75,7 @@ pub fn build_vault(root_dir: impl AsRef<Path>) -> crate::Vault {
 
     // --- Process Posts ---
     let posts_id = Id::new("posts");
-    let posts_ids = vec![posts_id];
+    let posts_ids = Ids::new(&[posts_id]);
     let posts_ep = make_path(posts_ids.clone(), &posts_dir);
 
     let mut posts_container = crate::Container {
@@ -117,7 +117,7 @@ pub fn build_vault(root_dir: impl AsRef<Path>) -> crate::Vault {
 
     // --- Process Notes ---
     let notes_id = Id::new("notes");
-    let notes_ids = vec![notes_id];
+    let notes_ids = Ids::new(&[notes_id]);
     let notes_ep = make_path(notes_ids.clone(), &notes_dir);
 
     let mut notes_container = crate::Container {
@@ -168,7 +168,7 @@ fn make_entity_path(
     let rel_path_str = rel_path.to_string_lossy().to_string();
     let rel_path_str = rel_path_str.replace('\\', "/");
 
-    let mut ids = parent_ids.to_vec();
+    let mut ids = Ids::new(parent_ids);
     ids.push(self_id);
 
     EntityPath {
@@ -181,7 +181,7 @@ fn make_entity_path(
 fn scan_posts_recursive(
     vault_root: &Path,
     dir: &Path,
-    parent_ids: Vec<Id>,
+    parent_ids: Ids,
     acc: &mut Vec<crate::Node>,
 ) {
     let mut subdirs = Vec::new();
@@ -288,7 +288,7 @@ fn scan_posts_recursive(
     }
 }
 
-fn scan_notes_content(vault_root: &Path, dir: &Path, parent_ids: Vec<Id>) -> Vec<crate::Node> {
+fn scan_notes_content(vault_root: &Path, dir: &Path, parent_ids: Ids) -> Vec<crate::Node> {
     let mut children = Vec::new();
     let mut subdirs = Vec::new();
 
@@ -353,7 +353,7 @@ fn scan_notes_content(vault_root: &Path, dir: &Path, parent_ids: Vec<Id>) -> Vec
     children
 }
 
-fn create_node_from_dir(vault_root: &Path, dir: &Path, ids: Vec<Id>) -> crate::Node {
+fn create_node_from_dir(vault_root: &Path, dir: &Path, ids: Ids) -> crate::Node {
     // EntityPath for this container
     let rel_path = pathdiff::diff_paths(dir, vault_root).unwrap();
     let rel_path_str = rel_path.to_string_lossy().to_string().replace('\\', "/");
@@ -437,34 +437,27 @@ pub fn export_vault(vault: &crate::Vault, out_dir: impl AsRef<Path>, public_url_
         let detail = article_clone.to_detail();
         let json = serde_json::to_string(&detail).unwrap();
 
-        let mut path = base_articles_dir.clone();
-        // Use ids for path structure: articles/posts/tech/rust.json
-        // Note: ids includes the article id itself at the end.
-        // We want to use all ids except the last one for directory structure?
-        // Or just use all ids as path components?
-        // If ids = [posts, tech, rust], we want articles/posts/tech/rust.json
-
-        for (i, id) in article.entity_path.ids.iter().enumerate() {
-            if i == article.entity_path.ids.len() - 1 {
-                path.push(format!("{}.json", id.0));
-            } else {
-                path.push(&id.0);
-            }
-        }
+        let path = base_articles_dir.join(format!("{}.json", article.entity_path.ids));
 
         write_if_changed(&path, &json);
         generated_files.insert(path);
 
         // Copy assets
-        for asset_path in assets {
-            if let Ok(rel_path) = asset_path.relative_to(vault_root) {
-                let dest_path = rel_path.to_path(out_dir.join("articles"));
-                if let Some(parent) = dest_path.parent() {
-                    std::fs::create_dir_all(parent).unwrap();
-                }
-                std::fs::copy(&asset_path, &dest_path).unwrap();
-                generated_files.insert(dest_path);
+        for (src_path, ids) in assets {
+            let mut dst_path = out_dir.join("articles").join(ids.to_string());
+            if let Some(ext) = src_path.extension() {
+                dst_path.set_extension(ext);
             }
+            if let Some(parent) = dst_path.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            println!(
+                "cargo::warning=copying from {} to {}",
+                src_path.display(),
+                dst_path.display()
+            );
+            std::fs::copy(&src_path, &dst_path).unwrap();
+            generated_files.insert(dst_path);
         }
     };
 

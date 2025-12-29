@@ -158,3 +158,7 @@ pub struct ArticleDetail {
 3.  **Generate**:
     -   Serialize the internal `Vault` structure to `vault.json` (using `PostMeta` and `NodeMeta`).
     -   Serialize every `Article` to its specific `.json` file (using `ArticleDetail`).
+
+---
+
+需要注意的是，如果某个 asset 的路径中包含奇怪的东西（比如 `[` 会被 pulldown-cmark 直接转义为 `%5b`），那么这个文件就无法被正确导出。
