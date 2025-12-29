@@ -19,11 +19,15 @@ fn main() {
     #[cfg(feature = "build")]
     {
         println!("Building vault from: {:?}", cli.vault);
-        let vault = aoike::build::build_vault(&cli.vault);
-        
+        let root = cli
+            .vault
+            .canonicalize()
+            .unwrap_or_else(|_| cli.vault.clone());
+        let vault = aoike::build::build_vault(&root);
+
         println!("Exporting vault to: {:?}", cli.output);
-        aoike::build::export_vault(&vault, &cli.output);
-        
+        aoike::build::export_vault(&vault, &cli.output, "/vault");
+
         println!("Done!");
     }
 

@@ -3,7 +3,7 @@ pub mod utils;
 
 use crate::build::article::ArticleSource;
 use crate::{EntityPath, Id};
-use relative_path::RelativePathBuf;
+use relative_path::{PathExt, RelativePathBuf};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use time::UtcDateTime;
@@ -152,6 +152,7 @@ pub fn build_vault(root_dir: impl AsRef<Path>) -> crate::Vault {
     });
 
     crate::Vault {
+        root_dir: root,
         posts: posts_container,
         notes: notes_container,
     }
@@ -388,7 +389,9 @@ fn create_node_from_dir(vault_root: &Path, dir: &Path, ids: Vec<Id>) -> crate::N
     })
 }
 
-pub fn export_vault(vault: &crate::Vault, out_dir: impl AsRef<Path>) {
+pub fn export_vault(vault: &crate::Vault, out_dir: impl AsRef<Path>, public_url_prefix: &str) {
+    let public_url_prefix = public_url_prefix.trim_end_matches("/");
+    let vault_root = &vault.root_dir;
     let out_dir = out_dir.as_ref();
     if !out_dir.exists() {
         std::fs::create_dir_all(out_dir).unwrap();
@@ -422,7 +425,16 @@ pub fn export_vault(vault: &crate::Vault, out_dir: impl AsRef<Path>) {
 
     // Helper to export an article
     let mut export_article = |article: &crate::Article| {
-        let detail = article.to_detail();
+        // Process assets and rewrite HTML
+
+        let mut article_clone = article.clone();
+        let assets = utils::rewrite_html_links(
+            &mut article_clone,
+            vault_root,
+            &format!("{public_url_prefix}/static/vault/articles"),
+        );
+
+        let detail = article_clone.to_detail();
         let json = serde_json::to_string(&detail).unwrap();
 
         let mut path = base_articles_dir.clone();
@@ -442,6 +454,18 @@ pub fn export_vault(vault: &crate::Vault, out_dir: impl AsRef<Path>) {
 
         write_if_changed(&path, &json);
         generated_files.insert(path);
+
+        // Copy assets
+        for asset_path in assets {
+            if let Ok(rel_path) = asset_path.relative_to(vault_root) {
+                let dest_path = rel_path.to_path(out_dir.join("articles"));
+                if let Some(parent) = dest_path.parent() {
+                    std::fs::create_dir_all(parent).unwrap();
+                }
+                std::fs::copy(&asset_path, &dest_path).unwrap();
+                generated_files.insert(dest_path);
+            }
+        }
     };
 
     fn export_container_content(

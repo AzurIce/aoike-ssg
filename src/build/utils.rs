@@ -1,6 +1,7 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use regex::Regex;
+use relative_path::PathExt;
 use time::UtcDateTime;
 
 pub fn patch_file(
@@ -68,6 +69,58 @@ pub fn get_ref_paths(html: &str) -> Vec<String> {
         .map(|cap| cap.get(1).unwrap().as_str().to_string())
         .filter(|s| !s.starts_with("data:"))
         .collect()
+}
+
+pub fn rewrite_html_links(
+    article: &mut crate::Article,
+    vault_root: &Path,
+    articles_url: &str,
+) -> Vec<PathBuf> {
+    let mut assets = Vec::new();
+    // Match src="..." and href="..."
+    // We use a simple regex that captures the attribute name and the value
+    let re = Regex::new(r#"(src|href)="([^"]+)""#).unwrap();
+
+    let new_html = re
+        .replace_all(&article.content_html, |caps: &regex::Captures| {
+            let attr = &caps[1];
+            let val = &caps[2];
+
+            // Check if it is a relative path (not starting with http, /, mailto, data, #)
+            if !val.starts_with("http")
+                && !val.starts_with('/')
+                && !val.starts_with("mailto:")
+                && !val.starts_with("data:")
+                && !val.starts_with('#')
+            {
+                // Calculate absolute path of the asset
+                let abs_asset_path = article
+                    .entity_path
+                    .path
+                    .to_path(vault_root)
+                    .parent()
+                    .expect(&format!(
+                        "Failed to get parent directory of article at {:?}",
+                        article.entity_path
+                    ))
+                    .join(val);
+
+                // Calculate relative path from vault root
+                if let Ok(rel_path) = abs_asset_path.relative_to(vault_root) {
+                    let new_url = format!("{}/{}", articles_url.trim_end_matches('/'), rel_path);
+
+                    assets.push(abs_asset_path);
+                    return format!(r#"{}="{}""#, attr, new_url);
+                }
+            }
+
+            // Return original if not modified
+            format!(r#"{}="{}""#, attr, val)
+        })
+        .to_string();
+
+    article.content_html = new_html;
+    assets
 }
 
 pub fn get_tag_content(html: &str, tag: &str) -> Option<String> {

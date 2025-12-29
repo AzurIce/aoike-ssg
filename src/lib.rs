@@ -141,6 +141,7 @@ impl Node {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Vault {
+    pub root_dir: PathBuf,
     pub posts: Container,
     pub notes: Container,
 }
