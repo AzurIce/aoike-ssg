@@ -1,14 +1,14 @@
 use serde::{Deserialize, Serialize};
 
 /// The root data structure exported to `vault.json`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VaultData {
     pub posts: Vec<ArticleMeta>,
     pub notes: Vec<NodeMeta>,
 }
 
 /// Metadata for a post, used in lists.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ArticleMeta {
     pub id: String,
     pub ids: Vec<String>,
@@ -22,7 +22,7 @@ pub struct ArticleMeta {
 /// A node in the notes tree.
 ///
 /// Can represent a container (directory) or a leaf article.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NodeMeta {
     pub id: String,
     pub ids: Vec<String>,
@@ -37,7 +37,7 @@ pub struct NodeMeta {
 }
 
 /// Detailed article data exported to individual JSON files.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ArticleDetail {
     #[serde(flatten)]
     pub meta: ArticleMeta,

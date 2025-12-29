@@ -32,7 +32,7 @@ impl ArticleSource {
             ref_paths: utils::get_ref_paths(&content_html),
             title,
             summary_html,
-            content_html,
+            content_html: filtered_html,
         }
     }
 
@@ -66,7 +66,6 @@ impl Parser for TypstArticleParser {
     fn try_parse(entity: Entity) -> Result<Self::Output, anyhow::Error> {
         let content_html = compile_typst_to_html(&entity.path)?;
         let content_html = utils::get_tag_content(&content_html, "body").expect("no body");
-        let content_html = utils::remove_html_tag(&content_html, &["h1"]);
         Ok(ArticleSource::from_html_entity(content_html, entity))
     }
 }
@@ -99,7 +98,6 @@ impl Parser for MarkdownArticleParser {
         let parser = pulldown_cmark::Parser::new(&content);
         let mut content_html = String::new();
         pulldown_cmark::html::push_html(&mut content_html, parser);
-        let content_html = utils::remove_html_tag(&content_html, &["h1"]);
 
         Ok(ArticleSource::from_html_entity(content_html, entity))
     }

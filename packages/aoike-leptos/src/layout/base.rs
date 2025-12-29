@@ -23,7 +23,8 @@ pub fn Header() -> impl IntoView {
                         .clone()
                         .map(|avatar| {
                             view! { <img class="h-full rounded" src=avatar alt="avatar" /> }
-                        })} <div class="flex flex-col">
+                        })}
+                    <div class="flex flex-col">
                         <span class="text-sm transition-transform duration-500 group-hover:-translate-y-1">
                             {title}
                         </span>
@@ -32,8 +33,15 @@ pub fn Header() -> impl IntoView {
                         </span>
                     </div>
                 </A>
-                <A href="/posts" {..} class="h-10 gap-1 nav-btn text-sm p-x-4">"文章"</A>
-                <A href="/search" {..} class="h-10 gap-1 nav-btn text-sm p-x-4">"搜索"</A>
+                <A href="/posts" {..} class="h-10 gap-1 nav-btn text-sm p-x-4">
+                    "文章"
+                </A>
+                <A href="/notes" {..} class="h-10 gap-1 nav-btn text-sm p-x-4">
+                    "笔记"
+                </A>
+                <A href="/search" {..} class="h-10 gap-1 nav-btn text-sm p-x-4">
+                    "搜索"
+                </A>
                 {config
                     .github_owner
                     .clone()

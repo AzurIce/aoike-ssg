@@ -1,10 +1,12 @@
 pub mod api;
 pub mod components {
+    pub mod article;
     pub mod giscus;
 }
 
 pub mod layout {
     pub mod base;
+    pub mod tri_column;
 }
 
 pub mod routes {
@@ -14,8 +16,8 @@ pub mod routes {
     pub mod post;
     pub use post::{Post, Posts};
 
-    // pub mod note;
-    // pub use note::{Note, Notes};
+    pub mod note;
+    pub use note::{Note, Notes};
 }
 
 mod utils;
@@ -72,40 +74,38 @@ pub fn AoikeApp(config: ConfigContext) -> impl IntoView {
 
     provide_meta_context();
 
-    view!{
+    view! {
         <CssProvider>
-            <Router>
-                <Header />
-                <main class="max-w-[100ch] w-full m-x-auto flex flex-col items-center p-8 gap-4">
-                    <Suspense fallback=move || {
-                        view! { "Loading..." }
-                    }>
-                        {move || {
-                            vault_resource
-                                .get()
-                                .map(|vault_res| {
-                                    match vault_res {
-                                        Some(vault) => {
-                                            provide_context(vault.clone());
-                                            view! {
-                                                <Routes fallback=|| view! { <NotFoundPage /> }>
-                                                    <Route path=path!("/") view=routes::Index />
-                                                    <Route path=path!("/posts") view=routes::Posts />
-                                                    <Route path=path!("/posts/:slug") view=routes::Post />
-                                                    // <Route path=path!("/notes") view=routes::Notes />
-                                                    // <Route path=path!("/notes/*path") view=routes::Note />
-                                                    <Route path=path!("/4o4") view=NotFoundPage />
-                                                </Routes>
-                                            }
-                                                .into_any()
-                                        }
-                                        None => view! { <p>"Failed to load vault.json"</p> }.into_any(),
+            <Suspense fallback=move || {
+                view! { "Loading..." }
+            }>
+                {move || {
+                    vault_resource
+                        .get()
+                        .map(|vault_res| {
+                            match vault_res {
+                                Some(vault) => {
+                                    provide_context(vault.clone());
+                                    view! {
+                                        <Router>
+                                            <Header />
+                                            <Routes fallback=|| view! { <NotFoundPage /> }>
+                                                <Route path=path!("/") view=routes::Index />
+                                                <Route path=path!("/posts") view=routes::Posts />
+                                                <Route path=path!("/posts/:slug") view=routes::Post />
+                                                <Route path=path!("/notes") view=routes::Notes />
+                                                <Route path=path!("/notes/*path") view=routes::Note />
+                                                <Route path=path!("/4o4") view=NotFoundPage />
+                                            </Routes>
+                                        </Router>
                                     }
-                                })
-                        }}
-                    </Suspense>
-                </main>
-            </Router>
+                                        .into_any()
+                                }
+                                None => view! { <p>"Failed to load vault.json"</p> }.into_any(),
+                            }
+                        })
+                }}
+            </Suspense>
         </CssProvider>
     }
 }

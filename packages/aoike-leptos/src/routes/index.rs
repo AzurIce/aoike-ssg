@@ -3,7 +3,11 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use time::OffsetDateTime;
 
-use crate::{ConfigContext, api::fetch_article};
+use crate::{
+    ConfigContext,
+    api::fetch_article,
+    layout::tri_column::{Main, TriColumn},
+};
 
 #[component]
 pub fn Index() -> impl IntoView {
@@ -23,58 +27,69 @@ pub fn Index() -> impl IntoView {
     let recent_posts = vault.posts.iter().take(5).cloned().collect::<Vec<_>>();
 
     view! {
-        <Hero />
+        <TriColumn>
+            <Main slot>
+                <Hero />
 
-        <div class="flex flex-col w-full p-2 markdown">
-            <h2>"最新文章"</h2>
-            <ul>
-                {recent_posts
-                    .into_iter()
-                    .map(|blog| {
-                        let created = OffsetDateTime::from_unix_timestamp(blog.created).unwrap();
-                        view! {
-                            <li class="flex gap-8">
-                                <span class="text-gray-600">
-                                    {format!(
-                                        "{}-{}-{}",
-                                        created.year(),
-                                        u8::from(created.month()),
-                                        created.day(),
-                                    )}
-                                </span>
-                                <A href=format!("/posts/{}", blog.id) {..} class="underline hover:underline-gray-400">{blog.title}</A>
-                            </li>
-                        }
-                    })
-                    .collect_view()}
-            </ul>
-            <hr />
-            <Suspense fallback=move || {
-                view! { "Loading content..." }
-            }>
-                {move || {
-                    index_article_resource
-                        .get()
-                        .map(|res| {
-                            match res {
-                                Some(article) => {
-                                    view! { <div inner_html=article.content></div> }.into_any()
+                <div class="flex flex-col w-full p-2 markdown">
+                    <h2>"最新文章"</h2>
+                    <ul>
+                        {recent_posts
+                            .into_iter()
+                            .map(|blog| {
+                                let created = OffsetDateTime::from_unix_timestamp(blog.created)
+                                    .unwrap();
+                                view! {
+                                    <li class="flex gap-8 items-baseline">
+                                        <span class="text-gray-600 text-sm font-mono">
+                                            {format!(
+                                                "{}-{:02}-{:02}",
+                                                created.year(),
+                                                u8::from(created.month()),
+                                                created.day(),
+                                            )}
+                                        </span>
+                                        <A
+                                            href=format!("/posts/{}", blog.id)
+                                            {..}
+                                            class="underline hover:underline-gray-400"
+                                        >
+                                            {blog.title}
+                                        </A>
+                                    </li>
                                 }
-                                None => view! {}.into_any(),
-                            }
+                            })
+                            .collect_view()}
+                    </ul>
+                    <hr />
+                    <Suspense fallback=move || {
+                        view! { "Loading content..." }
+                    }>
+                        {move || {
+                            index_article_resource
+                                .get()
+                                .map(|res| {
+                                    match res {
+                                        Some(article) => {
+                                            view! { <div inner_html=article.content></div> }.into_any()
+                                        }
+                                        None => view! {}.into_any(),
+                                    }
+                                })
+                        }}
+                    </Suspense>
+                </div>
+
+                {move || {
+                    config
+                        .giscus_options
+                        .clone()
+                        .map(|options| {
+                            view! { <crate::components::giscus::Giscus options=options /> }
                         })
                 }}
-            </Suspense>
-        </div>
-
-        {move || {
-            config
-                .giscus_options
-                .clone()
-                .map(|options| {
-                    view! { <crate::components::giscus::Giscus options=options /> }
-                })
-        }}
+            </Main>
+        </TriColumn>
     }
 }
 
