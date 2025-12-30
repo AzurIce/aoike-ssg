@@ -65,7 +65,7 @@ impl Parser for TypstArticleParser {
     type Output = ArticleSource;
     fn try_parse(entity: Entity) -> Result<Self::Output, anyhow::Error> {
         let content_html = compile_typst_to_html(&entity.path)?;
-        let content_html = utils::get_tag_content(&content_html, "body").expect("no body");
+        let content_html = utils::get_tag_content(&content_html, "body").unwrap_or_default();
         Ok(ArticleSource::from_html_entity(content_html, entity))
     }
 }
