@@ -37,6 +37,7 @@
             wasm-bindgen-cli
             trunk
             leptosfmt
+            miniserve
           ]);
         };
       }

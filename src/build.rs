@@ -390,6 +390,13 @@ fn create_node_from_dir(vault_root: &Path, dir: &Path, ids: Ids) -> crate::Node 
 }
 
 pub fn export_vault(vault: &crate::Vault, out_dir: impl AsRef<Path>, public_url_prefix: &str) {
+    println!(
+        "cargo::warning={}",
+        format!(
+            "exporting vault with public_url_prefix: {}",
+            public_url_prefix
+        )
+    );
     let public_url_prefix = public_url_prefix.trim_end_matches("/");
     let vault_root = &vault.root_dir;
     let out_dir = out_dir.as_ref();

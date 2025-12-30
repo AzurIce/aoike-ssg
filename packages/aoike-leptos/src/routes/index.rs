@@ -1,3 +1,4 @@
+use crate::BASE_URL;
 use aoike::data::VaultData;
 use leptos::prelude::*;
 use leptos_router::components::A;
@@ -50,7 +51,7 @@ pub fn Index() -> impl IntoView {
                                             )}
                                         </span>
                                         <A
-                                            href=format!("/posts/{}", blog.id)
+                                            href=format!("{BASE_URL}/posts/{}", blog.id)
                                             {..}
                                             class="underline hover:underline-gray-400"
                                         >
@@ -109,6 +110,7 @@ pub fn Hero() -> impl IntoView {
                 .avatar
                 .clone()
                 .map(|avatar| {
+                    let avatar = format!("{BASE_URL}/static/{}", avatar.trim_start_matches("/"));
                     view! { <img class="size-40 rounded" src=avatar /> }
                 })} <div class="flex flex-col items-center justify-around p-2 p-b-1 gap-3">
                 <span class="text-xl lxgw">"< " {title} " />"</span>

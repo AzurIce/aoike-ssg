@@ -1,3 +1,5 @@
+#![feature(const_option_ops)]
+#![feature(const_trait_impl)]
 pub mod api;
 pub mod components {
     pub mod article;
@@ -21,7 +23,7 @@ pub mod routes {
 }
 
 mod utils;
-use leptos::prelude::*;
+use leptos::{leptos_dom::logging::console_debug_log, prelude::*};
 use leptos_meta::*;
 use leptos_router::{
     components::{Route, Router, Routes},
@@ -50,6 +52,7 @@ pub struct ConfigContext {
 
 const CSS_MAIN: &str = include_str!("../css/main.css");
 const CSS_UNO: &str = include_str!("../css/uno.css");
+const BASE_URL: &str = option_env!("TRUNK_BUILD_PUBLIC_URL").unwrap_or("");
 
 #[component]
 pub fn CssProvider(children: Children) -> impl IntoView {
@@ -62,14 +65,13 @@ pub fn CssProvider(children: Children) -> impl IntoView {
 pub fn AoikeApp(config: ConfigContext) -> impl IntoView {
     provide_context(config.clone());
 
-    let base_url = config
-        .vault_base_url
-        .clone()
-        .unwrap_or_else(|| "/vault".to_string());
-
     let vault_resource = LocalResource::new(move || {
-        let base_url = base_url.clone();
-        async move { fetch_vault(&base_url).await.ok() }
+        let vault_base_url = config
+            .vault_base_url
+            .clone()
+            .unwrap_or_else(|| "/vault".to_string());
+        console_debug_log(&format!("Fetching vault from {vault_base_url}"));
+        async move { fetch_vault(&vault_base_url).await.ok() }
     });
 
     provide_meta_context();
@@ -87,7 +89,7 @@ pub fn AoikeApp(config: ConfigContext) -> impl IntoView {
                                 Some(vault) => {
                                     provide_context(vault.clone());
                                     view! {
-                                        <Router>
+                                        <Router base=BASE_URL>
                                             <Header />
                                             <Routes fallback=|| view! { <NotFoundPage /> }>
                                                 <Route path=path!("/") view=routes::Index />

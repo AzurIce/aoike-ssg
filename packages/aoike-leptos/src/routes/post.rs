@@ -4,6 +4,7 @@ use leptos_router::{NavigateOptions, components::A, hooks::use_params_map};
 use time::OffsetDateTime;
 
 use crate::{
+    BASE_URL,
     components::article::Article,
     layout::tri_column::{Main, TriColumn},
 };
@@ -32,7 +33,7 @@ pub fn Post() -> impl IntoView {
                                     ids_path=move || ids_path.clone()
                                     on_failed=|err| {
                                         let navigate = leptos_router::hooks::use_navigate();
-                                        navigate("/4o4", NavigateOptions::default());
+                                        navigate(&format!("{BASE_URL}/4o4"), NavigateOptions::default());
                                         console_debug_log(&format!("{err:?}"));
                                     }
                                 />
@@ -71,7 +72,7 @@ pub fn PostCard(meta: ArticleMeta) -> impl IntoView {
 
     view! {
         <div class="w-full flex flex-col gap-2 p-2 rounded border border-slate-200 hover:border-slate-400">
-            <A href=format!("/posts/{}", meta.id)>
+            <A href=format!("{BASE_URL}/posts/{}", meta.id)>
                 <h2>{meta.title}</h2>
             </A>
             <div class="flex gap-2">

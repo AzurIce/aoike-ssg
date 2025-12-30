@@ -6,6 +6,7 @@ use leptos::{
 use leptos_router::{NavigateOptions, components::A, hooks::use_params_map};
 
 use crate::{
+    BASE_URL,
     components::article::Article,
     layout::tri_column::{Left, Main, TriColumn},
 };
@@ -23,7 +24,7 @@ pub fn Notes() -> impl IntoView {
                         .iter()
                         .cloned()
                         .map(|note| {
-                            let href = format!("/{}", note.ids.join("/"));
+                            let href = format!("{BASE_URL}/{}", note.ids.join("/"));
                             console_debug_log(&format!("{:?}", note));
                             view! {
                                 <div class="flex items-center p-2 rounded border border-slate-200 hover:border-slate-400 hover:bg-gray-100">
@@ -56,7 +57,7 @@ pub fn Note() -> impl IntoView {
     Effect::new(move || {
         if note_meta().is_none() {
             let navigate = leptos_router::hooks::use_navigate();
-            navigate("/4o4", NavigateOptions::default());
+            navigate(&format!("{BASE_URL}/4o4"), NavigateOptions::default());
         }
     });
 
@@ -98,7 +99,7 @@ pub fn NoteTreeNode(node: NodeMeta) -> impl IntoView {
     let params = use_params_map();
     let path = move || params.read().get("path").clone();
 
-    let href = format!("/{}", node.ids.join("/"));
+    let href = format!("{BASE_URL}/{}", node.ids.join("/"));
     let title = node.title.clone();
     let children = node.children.clone();
     let ids = node.ids.clone();
@@ -140,11 +141,11 @@ pub fn NoteTreeNode(node: NodeMeta) -> impl IntoView {
 /// The Tree of the nodes in a note.
 #[component]
 pub fn NoteTree(root_node: NodeMeta) -> impl IntoView {
-    let href = format!("/{}", root_node.ids.join("/"));
+    let href = format!("{BASE_URL}/{}", root_node.ids.join("/"));
     view! {
         <div class="mb-2 px-2 flex items-center gap-2">
             <A
-                href="/notes"
+                href="../"
                 {..}
                 class="text-slate-500 hover:text-slate-700 transition-colors"
                 title="Back to Notes"
