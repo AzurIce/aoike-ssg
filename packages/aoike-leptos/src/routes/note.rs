@@ -17,7 +17,7 @@ pub fn Notes() -> impl IntoView {
     view! {
         <TriColumn>
             <Main slot>
-                <div class="flex gap-2">
+                <div class="flex gap-2 flex-wrap">
                     {vault
                         .notes
                         .iter()

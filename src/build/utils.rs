@@ -88,45 +88,51 @@ pub fn rewrite_html_links(
             let attr = &caps[1];
             let val = &caps[2];
 
+            // println!("cargo::warning={}", format!("find url {}", val));
             // Check if it is a relative path (not starting with http, /, mailto, data, #)
-            if !val.starts_with("http")
-                && !val.starts_with('/')
-                && !val.starts_with("mailto:")
-                && !val.starts_with("data:")
-                && !val.starts_with('#')
+            if val.starts_with("http")
+                || val.starts_with('/')
+                || val.starts_with("mailto:")
+                || val.starts_with("data:")
+                || val.starts_with('#')
             {
-                // Calculate absolute path of the asset
-                let abs_asset_path = article
-                    .entity_path
-                    .path
-                    .to_path(vault_root)
-                    .parent()
-                    .expect(&format!(
-                        "Failed to get parent directory of article at {:?}",
-                        article.entity_path
-                    ))
-                    .join(val);
+                return format!(r#"{}="{}""#, attr, val);
+            }
+            let article_path = article.entity_path.path.to_path(vault_root);
+            let Some(article_dir) = article_path.parent() else {
+                return format!(r#"{}="{}""#, attr, val);
+            };
 
-                // Calculate relative path from vault root
-                if let Ok(path_in_vault) = abs_asset_path.relative_to(vault_root) {
-                    let mut ids = Ids::from(path_in_vault.parent().unwrap().as_str());
-                    ids.push(Id::new(path_in_vault.file_stem().unwrap()));
-
-                    let url = if let Some(ext) = path_in_vault.extension() {
-                        format!("{ids}.{ext}")
-                    } else {
-                        format!("{ids}.jpg")
-                    };
-
-                    let new_url = format!("{}/{}", articles_url.trim_end_matches('/'), url);
-
-                    assets.push((abs_asset_path, ids));
-                    return format!(r#"{}="{}""#, attr, new_url);
-                }
+            // Calculate absolute path of the asset
+            let abs_asset_path = article_dir.join(val);
+            if !abs_asset_path.exists() || abs_asset_path.is_dir() {
+                println!(
+                    "cargo::warning=Asset not found: {} of {}",
+                    abs_asset_path.display(),
+                    article.entity_path.path
+                );
+                return format!(r#"{}="{}""#, attr, val);
             }
 
-            // Return original if not modified
-            format!(r#"{}="{}""#, attr, val)
+            // Calculate relative path from vault root
+            if let Ok(path_in_vault) = abs_asset_path.relative_to(vault_root) {
+                // println!("cargo::warning=REPLACING");
+                let mut ids = Ids::from(path_in_vault.parent().unwrap().as_str());
+                ids.push(Id::new(path_in_vault.file_stem().unwrap()));
+
+                let url = if let Some(ext) = path_in_vault.extension() {
+                    format!("{ids}.{ext}")
+                } else {
+                    format!("{ids}.jpg")
+                };
+
+                let new_url = format!("{}/{}", articles_url.trim_end_matches('/'), url);
+
+                assets.push((abs_asset_path, ids));
+                return format!(r#"{}="{}""#, attr, new_url);
+            } else {
+                format!(r#"{}="{}""#, attr, val)
+            }
         })
         .to_string();
 

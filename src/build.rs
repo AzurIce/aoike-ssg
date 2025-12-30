@@ -3,7 +3,7 @@ pub mod utils;
 
 use crate::build::article::ArticleSource;
 use crate::{EntityPath, Id, Ids};
-use relative_path::{PathExt, RelativePathBuf};
+use relative_path::RelativePathBuf;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use time::UtcDateTime;

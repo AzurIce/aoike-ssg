@@ -514,6 +514,7 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .shrink-0{flex-shrink:0;}
 .flex-grow{flex-grow:1;}
 .flex-col{flex-direction:column;}
+.flex-wrap{flex-wrap:wrap;}
 .gap-1{gap:calc(var(--spacing) * 1);}
 .gap-2{gap:calc(var(--spacing) * 2);}
 .gap-3{gap:calc(var(--spacing) * 3);}
