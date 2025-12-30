@@ -1,4 +1,4 @@
-use aoike::data::{NodeMeta, VaultData};
+use aoike::data::{ArticleMeta, NodeMeta, SectionMeta, VaultData};
 use leptos::{
     leptos_dom::logging::{console_debug_log, console_log},
     prelude::*,
@@ -69,7 +69,7 @@ pub fn Note() -> impl IntoView {
                         .map(|note_meta| {
                             view! {
                                 <nav class="sticky top-4">
-                                    <NoteTree root_node=note_meta.clone() />
+                                    <NoteTree section=note_meta.clone() />
                                 </nav>
                             }
                         })
@@ -95,14 +95,41 @@ pub fn Note() -> impl IntoView {
 }
 
 #[component]
-pub fn NoteTreeNode(node: NodeMeta) -> impl IntoView {
+pub fn NoteTreeArticleNode(article: ArticleMeta) -> impl IntoView {
     let params = use_params_map();
     let path = move || params.read().get("path").clone();
 
-    let href = format!("{BASE_URL}/{}", node.ids.join("/"));
-    let title = node.title.clone();
-    let children = node.children.clone();
-    let ids = node.ids.clone();
+    let href = format!("{BASE_URL}/{}", article.ids.join("/"));
+    let title = article.title.clone();
+    let ids = article.ids.clone();
+
+    let is_active = move || path().map(|p| format!("notes/{}", p)) == Some(ids.join("/"));
+    view! {
+        <li>
+            <div class=move || {
+                if is_active() {
+                    "flex items-center gap-1 py-1 px-2 rounded transition-colors bg-slate-100 font-bold text-primary"
+                } else {
+                    "flex items-center gap-1 py-1 px-2 rounded transition-colors hover:bg-slate-50 text-slate-600"
+                }
+            }>
+                <A href={href} {..} class="flex-grow truncate block">
+                    {title}
+                </A>
+            </div>
+        </li>
+    }
+}
+
+#[component]
+pub fn NoteTreeSectionNode(section: SectionMeta) -> impl IntoView {
+    let params = use_params_map();
+    let path = move || params.read().get("path").clone();
+
+    let href = format!("{BASE_URL}/{}", section.ids.join("/"));
+    let title = section.title.clone();
+    let children = section.children.clone();
+    let ids = section.ids.clone();
 
     let is_active = move || path().map(|p| format!("notes/{}", p)) == Some(ids.join("/"));
 
@@ -138,10 +165,25 @@ pub fn NoteTreeNode(node: NodeMeta) -> impl IntoView {
     }
 }
 
+#[component]
+pub fn NoteTreeNode(node: NodeMeta) -> impl IntoView {
+    match node {
+        NodeMeta::Article(article) => view! {
+            <NoteTreeArticleNode article=article />
+        }
+        .into_any(),
+        NodeMeta::Section(section) => view! {
+            <NoteTreeSectionNode section=section />
+        }
+        .into_any(),
+    }
+}
+
 /// The Tree of the nodes in a note.
 #[component]
-pub fn NoteTree(root_node: NodeMeta) -> impl IntoView {
-    let href = format!("{BASE_URL}/{}", root_node.ids.join("/"));
+pub fn NoteTree(section: SectionMeta) -> impl IntoView {
+    let href = format!("{BASE_URL}/{}", section.ids.join("/"));
+
     view! {
         <div class="mb-2 px-2 flex items-center gap-2">
             <A
@@ -153,11 +195,11 @@ pub fn NoteTree(root_node: NodeMeta) -> impl IntoView {
                 <div class="i-mdi-arrow-left text-xl" />
             </A>
             <A href={href} {..} class="font-bold text-lg hover:underline">
-                {root_node.title.clone()}
+                {section.title.clone()}
             </A>
         </div>
         <ul class="flex flex-col gap-1">
-            {root_node
+            {section
                 .children
                 .into_iter()
                 .map(|child| {

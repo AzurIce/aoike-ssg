@@ -34,6 +34,9 @@ impl Id {
 pub struct Ids(Vec<Id>);
 
 impl Ids {
+    pub fn root() -> Self {
+        Ids(vec![])
+    }
     pub fn new(ids: &[Id]) -> Self {
         Self(ids.to_vec())
     }
@@ -95,10 +98,19 @@ pub struct EntityPath {
     /// The root directory of the vault (absolute path)
     pub vault_root: PathBuf,
     /// The relative path from vault root to the source file/directory
-    pub path: RelativePathBuf,
+    pub rel_path: RelativePathBuf,
 }
 
 impl EntityPath {
+    pub fn new(vault_root: PathBuf, rel_path: RelativePathBuf) -> Self {
+        // TODO: Make it safer, now Ids from may failed when rel_path is invalid
+        let ids = Ids::from(rel_path.with_extension("").as_str());
+        Self {
+            ids,
+            vault_root,
+            rel_path,
+        }
+    }
     pub fn id(&self) -> &Id {
         self.ids
             .last()
@@ -109,13 +121,11 @@ impl EntityPath {
 /// An article.
 ///
 /// Article is the basic unit of content in a vault.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct Article {
     pub entity_path: EntityPath,
     pub title: String,
     pub summary_html: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    #[serde(default)]
     pub content_html: String,
     pub created: UtcDateTime,
     pub updated: UtcDateTime,
@@ -126,7 +136,7 @@ impl Article {
         data::ArticleMeta {
             id: self.entity_path.id().0.clone(),
             ids: self.entity_path.ids.iter().map(|id| id.0.clone()).collect(),
-            path: self.entity_path.path.as_str().to_string(),
+            path: self.entity_path.rel_path.as_str().to_string(),
             title: self.title.clone(),
             summary: self.summary_html.clone(),
             created: self.created.unix_timestamp(),
@@ -142,20 +152,40 @@ impl Article {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Container {
+#[derive(Clone, Debug)]
+pub struct Section {
     pub entity_path: EntityPath,
-    pub index: Option<Article>,
     pub children: Vec<Node>,
 }
 
-impl Container {
+impl Section {
+    pub fn children(&self) -> impl Iterator<Item = &Node> {
+        self.children.iter()
+    }
     pub fn articles(&self) -> impl Iterator<Item = &Article> {
         self.children.iter().filter_map(|n| n.as_article())
     }
-
-    pub fn sub_containers(&self) -> impl Iterator<Item = &Container> {
-        self.children.iter().filter_map(|n| n.as_container())
+    pub fn sub_sections(&self) -> impl Iterator<Item = &Section> {
+        self.children.iter().filter_map(|n| n.as_section())
+    }
+    pub fn index(&self) -> Option<&Article> {
+        self.get(&Id::new("index")).and_then(|n| n.as_article())
+    }
+    pub fn get(&self, id: &Id) -> Option<&Node> {
+        self.children.iter().find(|n| n.id() == id)
+    }
+    pub fn to_meta(&self) -> data::SectionMeta {
+        data::SectionMeta {
+            id: self.entity_path.id().to_string(),
+            ids: self.entity_path.ids.iter().map(|id| id.0.clone()).collect(),
+            path: self.entity_path.rel_path.as_str().to_string(),
+            title: self
+                .index()
+                .map(|article| article.title.clone())
+                .unwrap_or(self.entity_path.id().to_string()),
+            children: self.children().map(Node::to_meta).collect(),
+            has_index: self.index().is_some(),
+        }
     }
 }
 
@@ -163,16 +193,16 @@ impl Container {
 ///
 /// Represents a directory that may contain an index article, other articles,
 /// and sub-nodes (subdirectories).
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub enum Node {
-    Container(Container),
+    Section(Section),
     Article(Article),
 }
 
 impl Node {
     pub fn entity_path(&self) -> &EntityPath {
         match self {
-            Node::Container(c) => &c.entity_path,
+            Node::Section(c) => &c.entity_path,
             Node::Article(a) => &a.entity_path,
         }
     }
@@ -181,9 +211,9 @@ impl Node {
         self.entity_path().id()
     }
 
-    pub fn as_container(&self) -> Option<&Container> {
+    pub fn as_section(&self) -> Option<&Section> {
         match self {
-            Node::Container(c) => Some(c),
+            Node::Section(c) => Some(c),
             _ => None,
         }
     }
@@ -194,86 +224,51 @@ impl Node {
             _ => None,
         }
     }
+
+    pub fn to_meta(&self) -> data::NodeMeta {
+        match self {
+            Node::Section(c) => data::NodeMeta::Section(c.to_meta()),
+            Node::Article(a) => data::NodeMeta::Article(a.to_meta()),
+        }
+    }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct Vault {
     pub root_dir: PathBuf,
-    pub posts: Container,
-    pub notes: Container,
+    pub root_section: Section,
 }
 
 impl Vault {
+    fn posts_section(&self) -> Option<&Section> {
+        self.root_section
+            .get(&Id::new("posts"))
+            .and_then(|n| n.as_section())
+    }
+    fn notes_section(&self) -> Option<&Section> {
+        self.root_section
+            .get(&Id::new("notes"))
+            .and_then(|n| n.as_section())
+    }
     pub fn export(&self) -> data::VaultData {
         // 1. Flatten posts
-        let mut posts: Vec<data::ArticleMeta> =
-            self.posts.articles().map(|a| a.to_meta()).collect();
+        let mut posts: Vec<data::ArticleMeta> = self
+            .posts_section()
+            .iter()
+            .flat_map(|s| s.articles().map(|a| a.to_meta()))
+            .collect();
 
         posts.sort_by(|a, b| b.created.cmp(&a.created));
 
         // 2. Convert notes tree
         let notes = self
-            .notes
-            .children
+            .notes_section()
             .iter()
-            .map(|node| convert_node_to_note(node))
+            .flat_map(|s| s.children().filter_map(|n| n.as_section()))
+            .map(|s| s.to_meta())
             .collect();
 
         data::VaultData { posts, notes }
-    }
-}
-
-fn convert_node_to_note(node: &Node) -> data::NodeMeta {
-    match node {
-        Node::Article(article) => data::NodeMeta {
-            id: article.entity_path.id().0.clone(),
-            ids: article
-                .entity_path
-                .ids
-                .iter()
-                .map(|id| id.0.clone())
-                .collect(),
-            path: article.entity_path.path.as_str().to_string(),
-            title: article.title.clone(),
-            summary: Some(article.summary_html.clone()),
-            created: article.created.unix_timestamp(),
-            updated: article.updated.unix_timestamp(),
-            children: vec![],
-        },
-        Node::Container(container) => {
-            let (title, summary, created, updated) = if let Some(index) = &container.index {
-                (
-                    index.title.clone(),
-                    Some(index.summary_html.clone()),
-                    index.created.unix_timestamp(),
-                    index.updated.unix_timestamp(),
-                )
-            } else {
-                (container.entity_path.id().0.clone(), None, 0, 0)
-            };
-
-            let children = container
-                .children
-                .iter()
-                .map(|child| convert_node_to_note(child))
-                .collect();
-
-            data::NodeMeta {
-                id: container.entity_path.id().0.clone(),
-                ids: container
-                    .entity_path
-                    .ids
-                    .iter()
-                    .map(|id| id.0.clone())
-                    .collect(),
-                path: container.entity_path.path.as_str().to_string(),
-                title,
-                summary,
-                created,
-                updated,
-                children,
-            }
-        }
     }
 }
 

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VaultData {
     pub posts: Vec<ArticleMeta>,
-    pub notes: Vec<NodeMeta>,
+    pub notes: Vec<SectionMeta>,
 }
 
 /// Metadata for a post, used in lists.
@@ -19,22 +19,54 @@ pub struct ArticleMeta {
     pub updated: i64,
 }
 
-/// A node in the notes tree.
-///
-/// Can represent a container (directory) or a leaf article.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct NodeMeta {
+pub struct SectionMeta {
     pub id: String,
     pub ids: Vec<String>,
     pub path: String,
     pub title: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub summary: Option<String>,
-    pub created: i64,
-    pub updated: i64,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<NodeMeta>,
+    pub has_index: bool,
 }
+
+/// A node in the notes tree.
+///
+/// Can represent a container (directory) or a leaf article.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum NodeMeta {
+    Section(SectionMeta),
+    Article(ArticleMeta),
+}
+
+impl NodeMeta {
+    pub fn ids(&self) -> &[String] {
+        match self {
+            NodeMeta::Section(section) => &section.ids,
+            NodeMeta::Article(article) => &article.ids,
+        }
+    }
+    pub fn title(&self) -> &str {
+        match self {
+            NodeMeta::Section(section) => &section.title,
+            NodeMeta::Article(article) => &article.title,
+        }
+    }
+}
+
+// #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+// pub struct NodeMeta {
+//     pub id: String,
+//     pub ids: Vec<String>,
+//     pub path: String,
+//     pub title: String,
+//     pub has_index: bool,
+//     #[serde(skip_serializing_if = "Option::is_none")]
+//     pub summary: Option<String>,
+//     pub created: i64,
+//     pub updated: i64,
+//     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+//     pub children: Vec<NodeMeta>,
+// }
 
 /// Detailed article data exported to individual JSON files.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

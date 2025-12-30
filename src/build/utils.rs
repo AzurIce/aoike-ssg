@@ -98,7 +98,7 @@ pub fn rewrite_html_links(
             {
                 return format!(r#"{}="{}""#, attr, val);
             }
-            let article_path = article.entity_path.path.to_path(vault_root);
+            let article_path = article.entity_path.rel_path.to_path(vault_root);
             let Some(article_dir) = article_path.parent() else {
                 return format!(r#"{}="{}""#, attr, val);
             };
@@ -109,7 +109,7 @@ pub fn rewrite_html_links(
                 println!(
                     "cargo::warning=Asset not found: {} of {}",
                     abs_asset_path.display(),
-                    article.entity_path.path
+                    article.entity_path.rel_path
                 );
                 return format!(r#"{}="{}""#, attr, val);
             }
