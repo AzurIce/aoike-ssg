@@ -1,5 +1,5 @@
 /* layer: properties */
-@supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))){*, ::before, ::after, ::backdrop{--un-bg-opacity:100%;--un-text-opacity:100%;--un-border-bottom-opacity:100%;--un-translate-x:initial;--un-translate-y:initial;--un-translate-z:initial;--un-ease:initial;--un-outline-opacity:100%;--un-border-opacity:100%;--un-line-opacity:100%;}}
+@supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))){*, ::before, ::after, ::backdrop{--un-bg-opacity:100%;--un-text-opacity:100%;--un-border-bottom-opacity:100%;--un-translate-x:initial;--un-translate-y:initial;--un-translate-z:initial;--un-ease:initial;--un-outline-opacity:100%;--un-line-opacity:100%;--un-border-opacity:100%;}}
 @property --un-text-opacity{syntax:"<percentage>";inherits:false;initial-value:100%;}
 @property --un-outline-opacity{syntax:"<percentage>";inherits:false;initial-value:100%;}
 @property --un-outline-style{syntax:"*";inherits:false;initial-value:solid;}
@@ -38,23 +38,23 @@
 --text-2xl-lineHeight: 2rem;
 --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
 --colors-slate-200: oklch(92.9% 0.013 255.508);
+--font-mono: JetBrainsMono NFM,Consolas,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+--colors-gray-600: oklch(44.6% 0.03 256.802);
+--text-xl-fontSize: 1.25rem;
+--text-xl-lineHeight: 1.75rem;
 --colors-gray-400: oklch(70.7% 0.022 261.325);
 --colors-slate-400: oklch(70.4% 0.04 256.788);
 --fontWeight-bold: 700;
 --colors-slate-100: oklch(96.8% 0.007 247.896);
+--colors-slate-500: oklch(55.4% 0.046 257.417);
 --text-lg-fontSize: 1.125rem;
 --text-lg-lineHeight: 1.75rem;
 --colors-gray-100: oklch(96.7% 0.003 264.542);
 --colors-slate-50: oklch(98.4% 0.003 247.858);
---colors-gray-600: oklch(44.6% 0.03 256.802);
---text-xl-fontSize: 1.25rem;
---text-xl-lineHeight: 1.75rem;
+--colors-slate-700: oklch(37.2% 0.044 257.287);
 --font-sans: ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";
---font-mono: JetBrainsMono NFM,Consolas,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
 --default-font-family: var(--font-sans);
 --default-monoFont-family: var(--font-mono);
---colors-slate-500: oklch(55.4% 0.046 257.417);
---colors-slate-700: oklch(37.2% 0.044 257.287);
 }
 /* layer: base */
 /*
@@ -475,7 +475,8 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .color-\[\#19a2d4\]{color:color-mix(in oklab, #19a2d4 var(--un-text-opacity), transparent) /* #19a2d4 */;}
 .font-bold{--un-font-weight:var(--fontWeight-bold);font-weight:var(--fontWeight-bold);}
 .font-mono{font-family:var(--font-mono);}
-.m-x-auto{margin-inline:auto;}
+.m-x-auto,
+.mx-auto{margin-inline:auto;}
 .m-r-auto{margin-right:auto;}
 .mb-2{margin-bottom:calc(var(--spacing) * 2);}
 .ml-2{margin-left:calc(var(--spacing) * 2);}
@@ -529,7 +530,7 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .h-14{height:calc(var(--spacing) * 14);}
 .h-full{height:100%;}
 .max-h-0{max-height:calc(var(--spacing) * 0);}
-.max-w-\[100ch\]{max-width:100ch;}
+.max-w-\[80ch\]{max-width:80ch;}
 .max-w-5xl{max-width:var(--container-5xl);}
 .w-full{width:100%;}
 .group:hover .group-hover\:max-h-8{max-height:calc(var(--spacing) * 8);}

@@ -1,4 +1,4 @@
-use aoike::data::{ArticleMeta, VaultData};
+use aoike::data::{ArticleMeta, VaultMeta};
 use leptos::{leptos_dom::logging::console_debug_log, prelude::*};
 use leptos_router::{NavigateOptions, components::A, hooks::use_params_map};
 use time::OffsetDateTime;
@@ -14,13 +14,17 @@ pub fn Post() -> impl IntoView {
     let params = use_params_map();
     let slug = move || params.read().get("slug").unwrap_or_default();
 
-    let vault = use_context::<VaultData>().expect("VaultData missing");
+    let vault = use_context::<VaultMeta>().expect("VaultData missing");
 
     let post_meta = move || {
         let s = slug();
-        vault.posts.iter().find(|p| p.id == s).cloned()
+        vault
+            .posts
+            .iter()
+            .find(|p| p.entity_path.id() == Some(&s))
+            .cloned()
     };
-    let post_ids_path = move || post_meta().map(|meta| meta.ids.join("/"));
+    let post_ids_path = move || post_meta().map(|meta| meta.entity_path.ids_path());
 
     view! {
         <TriColumn>
@@ -33,7 +37,10 @@ pub fn Post() -> impl IntoView {
                                     ids_path=move || ids_path.clone()
                                     on_failed=|err| {
                                         let navigate = leptos_router::hooks::use_navigate();
-                                        navigate(&format!("{BASE_URL}/4o4"), NavigateOptions::default());
+                                        navigate(
+                                            &format!("{BASE_URL}/4o4"),
+                                            NavigateOptions::default(),
+                                        );
                                         console_debug_log(&format!("{err:?}"));
                                     }
                                 />
@@ -47,7 +54,7 @@ pub fn Post() -> impl IntoView {
 
 #[component]
 pub fn Posts() -> impl IntoView {
-    let vault = use_context::<VaultData>().expect("VaultData missing");
+    let vault = use_context::<VaultMeta>().expect("VaultData missing");
     view! {
         <TriColumn>
             <Main slot>
@@ -72,7 +79,7 @@ pub fn PostCard(meta: ArticleMeta) -> impl IntoView {
 
     view! {
         <div class="w-full flex flex-col gap-2 p-2 rounded border border-slate-200 hover:border-slate-400">
-            <A href=format!("{BASE_URL}/posts/{}", meta.id)>
+            <A href=format!("{BASE_URL}/posts/{}", meta.entity_path.id().unwrap())>
                 <h2>{meta.title}</h2>
             </A>
             <div class="flex gap-2">

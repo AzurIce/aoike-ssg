@@ -28,7 +28,7 @@ pub fn TriColumn(
                     {left.map(|x| (x.children)())}
                 </div>
             </aside>
-            <main class="max-w-[100ch] w-full flex flex-col items-center p-8 gap-4 shrink-0">
+            <main class="max-w-[80ch] w-full flex flex-col items-center p-8 gap-4 shrink-0">
                 {(main.children)()}
             </main>
             <aside class="flex-1 flex justify-start">

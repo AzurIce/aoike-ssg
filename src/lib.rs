@@ -25,6 +25,9 @@ impl Display for Id {
 }
 
 impl Id {
+    pub fn is_index(&self) -> bool {
+        self.0 == "index"
+    }
     pub fn new(original: &str) -> Self {
         Self(slug::slugify(original))
     }
@@ -134,9 +137,7 @@ pub struct Article {
 impl Article {
     pub fn to_meta(&self) -> data::ArticleMeta {
         data::ArticleMeta {
-            id: self.entity_path.id().0.clone(),
-            ids: self.entity_path.ids.iter().map(|id| id.0.clone()).collect(),
-            path: self.entity_path.rel_path.as_str().to_string(),
+            entity_path: data::EntityPath::from(self.entity_path.clone()),
             title: self.title.clone(),
             summary: self.summary_html.clone(),
             created: self.created.unix_timestamp(),
@@ -144,8 +145,8 @@ impl Article {
         }
     }
 
-    pub fn to_detail(&self) -> data::ArticleDetail {
-        data::ArticleDetail {
+    pub fn to_detail(&self) -> data::ArticleData {
+        data::ArticleData {
             meta: self.to_meta(),
             content: self.content_html.clone(),
         }
@@ -155,6 +156,7 @@ impl Article {
 #[derive(Clone, Debug)]
 pub struct Section {
     pub entity_path: EntityPath,
+    pub index: Option<Article>,
     pub children: Vec<Node>,
 }
 
@@ -168,23 +170,19 @@ impl Section {
     pub fn sub_sections(&self) -> impl Iterator<Item = &Section> {
         self.children.iter().filter_map(|n| n.as_section())
     }
-    pub fn index(&self) -> Option<&Article> {
-        self.get(&Id::new("index")).and_then(|n| n.as_article())
-    }
     pub fn get(&self, id: &Id) -> Option<&Node> {
         self.children.iter().find(|n| n.id() == id)
     }
     pub fn to_meta(&self) -> data::SectionMeta {
         data::SectionMeta {
-            id: self.entity_path.id().to_string(),
-            ids: self.entity_path.ids.iter().map(|id| id.0.clone()).collect(),
-            path: self.entity_path.rel_path.as_str().to_string(),
+            entity_path: data::EntityPath::from(self.entity_path.clone()),
             title: self
-                .index()
+                .index
+                .as_ref()
                 .map(|article| article.title.clone())
                 .unwrap_or(self.entity_path.id().to_string()),
             children: self.children().map(Node::to_meta).collect(),
-            has_index: self.index().is_some(),
+            index: self.index.as_ref().map(|a| a.to_meta()),
         }
     }
 }
@@ -250,7 +248,7 @@ impl Vault {
             .get(&Id::new("notes"))
             .and_then(|n| n.as_section())
     }
-    pub fn export(&self) -> data::VaultData {
+    pub fn export(&self) -> data::VaultMeta {
         // 1. Flatten posts
         let mut posts: Vec<data::ArticleMeta> = self
             .posts_section()
@@ -268,7 +266,7 @@ impl Vault {
             .map(|s| s.to_meta())
             .collect();
 
-        data::VaultData { posts, notes }
+        data::VaultMeta { posts, notes }
     }
 }
 

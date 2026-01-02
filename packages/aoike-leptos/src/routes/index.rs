@@ -1,5 +1,5 @@
 use crate::BASE_URL;
-use aoike::data::VaultData;
+use aoike::data::VaultMeta;
 use leptos::prelude::*;
 use leptos_router::components::A;
 use time::OffsetDateTime;
@@ -13,7 +13,7 @@ use crate::{
 #[component]
 pub fn Index() -> impl IntoView {
     let config = use_context::<ConfigContext>().expect("ConfigContext missing");
-    let vault = use_context::<VaultData>().expect("VaultData missing");
+    let vault = use_context::<VaultMeta>().expect("VaultData missing");
 
     let base_url = config
         .vault_base_url
@@ -22,7 +22,7 @@ pub fn Index() -> impl IntoView {
 
     let index_article_resource = LocalResource::new(move || {
         let base_url = base_url.clone();
-        async move { fetch_article(&base_url, "posts").await.ok() }
+        async move { fetch_article(&base_url, "index").await.ok() }
     });
 
     let recent_posts = vault.posts.iter().take(5).cloned().collect::<Vec<_>>();
@@ -51,7 +51,10 @@ pub fn Index() -> impl IntoView {
                                             )}
                                         </span>
                                         <A
-                                            href=format!("{BASE_URL}/posts/{}", blog.id)
+                                            href=format!(
+                                                "{BASE_URL}/posts/{}",
+                                                blog.entity_path.ids.last().unwrap(),
+                                            )
                                             {..}
                                             class="underline hover:underline-gray-400"
                                         >

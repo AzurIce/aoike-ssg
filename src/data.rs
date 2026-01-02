@@ -1,8 +1,33 @@
+#![warn(missing_docs)]
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EntityPath {
+    pub ids: Vec<String>,
+    pub rel_path: String,
+}
+
+impl EntityPath {
+    pub fn id(&self) -> Option<&str> {
+        self.ids.last().map(|s| s.as_str())
+    }
+    pub fn ids_path(&self) -> String {
+        self.ids.join("/")
+    }
+}
+
+impl From<crate::EntityPath> for EntityPath {
+    fn from(value: crate::EntityPath) -> Self {
+        Self {
+            ids: value.ids.0.iter().map(|id| id.to_string()).collect(),
+            rel_path: value.rel_path.to_string(),
+        }
+    }
+}
 
 /// The root data structure exported to `vault.json`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct VaultData {
+pub struct VaultMeta {
     pub posts: Vec<ArticleMeta>,
     pub notes: Vec<SectionMeta>,
 }
@@ -10,9 +35,7 @@ pub struct VaultData {
 /// Metadata for a post, used in lists.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ArticleMeta {
-    pub id: String,
-    pub ids: Vec<String>,
-    pub path: String,
+    pub entity_path: EntityPath,
     pub title: String,
     pub summary: String,
     pub created: i64,
@@ -21,12 +44,11 @@ pub struct ArticleMeta {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SectionMeta {
-    pub id: String,
-    pub ids: Vec<String>,
-    pub path: String,
+    pub entity_path: EntityPath,
     pub title: String,
     pub children: Vec<NodeMeta>,
-    pub has_index: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub index: Option<ArticleMeta>,
 }
 
 /// A node in the notes tree.
@@ -39,10 +61,10 @@ pub enum NodeMeta {
 }
 
 impl NodeMeta {
-    pub fn ids(&self) -> &[String] {
+    pub fn entity_path(&self) -> &EntityPath {
         match self {
-            NodeMeta::Section(section) => &section.ids,
-            NodeMeta::Article(article) => &article.ids,
+            NodeMeta::Section(section) => &section.entity_path,
+            NodeMeta::Article(article) => &article.entity_path,
         }
     }
     pub fn title(&self) -> &str {
@@ -53,24 +75,9 @@ impl NodeMeta {
     }
 }
 
-// #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-// pub struct NodeMeta {
-//     pub id: String,
-//     pub ids: Vec<String>,
-//     pub path: String,
-//     pub title: String,
-//     pub has_index: bool,
-//     #[serde(skip_serializing_if = "Option::is_none")]
-//     pub summary: Option<String>,
-//     pub created: i64,
-//     pub updated: i64,
-//     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-//     pub children: Vec<NodeMeta>,
-// }
-
 /// Detailed article data exported to individual JSON files.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ArticleDetail {
+pub struct ArticleData {
     #[serde(flatten)]
     pub meta: ArticleMeta,
     pub content: String,

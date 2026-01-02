@@ -2,7 +2,7 @@ pub mod article;
 pub mod utils;
 
 use crate::build::article::ArticleSource;
-use crate::{Article, EntityPath, Node, Section};
+use crate::{Article, EntityPath, Id, Node, Section};
 use relative_path::{PathExt, RelativePath};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -109,7 +109,7 @@ pub fn build_section(
 
     // Children
     // TODO: read_dir should not failed?
-    let children = std::fs::read_dir(&path)
+    let mut children = std::fs::read_dir(&path)
         .ok()
         .into_iter()
         .flat_map(|entries| {
@@ -126,10 +126,28 @@ pub fn build_section(
             })
         })
         .collect::<Vec<_>>();
+
+    let index = children
+        .extract_if(.., |n| {
+            if let Node::Article(article) = n
+                && article.entity_path.id().is_index()
+            {
+                true
+            } else {
+                false
+            }
+        })
+        .next()
+        .map(|n| match n {
+            Node::Article(article) => article,
+            _ => unreachable!(),
+        });
+
     // TODO: is sorting neccesary?
     Some(Section {
         entity_path,
         children,
+        index,
     })
 }
 
@@ -224,10 +242,20 @@ pub fn export_vault(vault: &crate::Vault, out_dir: impl AsRef<Path>, public_url_
 
     fn export_section_content(
         section: &crate::Section,
-        export_fn: &mut impl FnMut(&crate::Article),
+        fn_export_article: &mut impl FnMut(&crate::Article),
     ) {
+        if let Some(article) = section.index.as_ref() {
+            println!(
+                "cargo::warning={}",
+                format!(
+                    "Exporting index article for section {:?}",
+                    section.entity_path
+                )
+            );
+            fn_export_article(article);
+        }
         for child in &section.children {
-            export_node_content(child, export_fn);
+            export_node_content(child, fn_export_article);
         }
     }
 
