@@ -2,7 +2,7 @@ pub mod article;
 pub mod utils;
 
 use crate::build::article::ArticleSource;
-use crate::{Article, EntityPath, Id, Node, Section};
+use crate::{Article, EntityPath, Node, Section};
 use relative_path::{PathExt, RelativePath};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
