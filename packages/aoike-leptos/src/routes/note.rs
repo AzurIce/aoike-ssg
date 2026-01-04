@@ -62,13 +62,21 @@ pub fn Note() -> impl IntoView {
     let current_node = RwSignal::<Option<NodeMeta>>::new(None);
     Effect::new(move || {
         // console_log(&format!("Path: {:?}", path()));
+        // console_log(&format!("Current Node: {:?}", current_node.get()));
         if current_node.read().is_none() {
             current_node.set(note_meta.get().and_then(|section| {
                 entity_path()
                     .and_then(|p| section.find_recursive(&p))
-                    .or(section.index.map(NodeMeta::Article))
-                    .or(section.children.first().cloned())
+                    .or(section.index.clone().map(NodeMeta::Article))
+                    .or(section.first_article().cloned().map(NodeMeta::Article))
             }));
+            if let Some(current_node) = current_node.get() {
+                let navigate = leptos_router::hooks::use_navigate();
+                navigate(
+                    &format!("{BASE_URL}/{}", current_node.entity_path().ids_path()),
+                    NavigateOptions::default(),
+                );
+            }
         }
     });
 
@@ -103,7 +111,14 @@ pub fn Note() -> impl IntoView {
                         .map(|node| {
                             view! {
                                 <Article
-                                    ids_path=move || node.entity_path().ids_path()
+                                    ids_path=move || {
+                                        let mut ids_path = node.entity_path().ids_path();
+                                        if matches!(node, NodeMeta::Section(_)) {
+                                            ids_path.push_str("/index");
+                                        }
+
+                                        ids_path
+                                    }
                                     on_failed=|err| {
                                         console_log(&format!("Failed to fetch article: {:?}", err));
                                     }
@@ -132,6 +147,13 @@ pub fn NoteTreeNode(node: NodeMeta, current_node: RwSignal<Option<NodeMeta>>) ->
         ).unwrap_or_default()
     });
     let not_active = enclose!((active) move || !active());
+    let can_jump = if let NodeMeta::Section(section) = &node
+        && section.index.is_none()
+    {
+        false
+    } else {
+        true
+    };
 
     view! {
         <li>
@@ -142,18 +164,31 @@ pub fn NoteTreeNode(node: NodeMeta, current_node: RwSignal<Option<NodeMeta>>) ->
                 )
                 class=(
                     ["hover:bg-slate-50", "text-slate-600"],
-                    enclose!((not_active) move || not_active()),
+                    enclose!((not_active) move || not_active() && can_jump),
                 )
+                class=("text-slate-400", !can_jump)
                 class="flex items-center gap-1 py-1 px-2 rounded transition-colors"
             >
-                <A
-                    href=href
-                    on:click={enclose!((node) move |_| current_node.set(Some(node.clone())))}
-                    {..}
-                    class="flex-grow truncate block"
-                >
-                    {title}
-                </A>
+                {if can_jump {
+                    view!{
+                        <A
+                            href=href
+                            on:click={enclose!((node) move |_| if can_jump { current_node.set(Some(node.clone())) })}
+                            {..}
+                            class="flex-grow truncate block"
+                        >
+                            {title}
+                        </A>
+                    }.into_any()
+                }else {
+                    view!{
+                        <span
+                            class="flex-grow truncate block"
+                        >
+                            {title}
+                        </span>
+                    }.into_any()
+                }}
             </div>
         </li>
         {enclose!(

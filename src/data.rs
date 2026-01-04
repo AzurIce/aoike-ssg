@@ -100,6 +100,16 @@ pub struct SectionMeta {
 }
 
 impl SectionMeta {
+    /// Find the first article (index, or first in child)
+    pub fn first_article(&self) -> Option<&ArticleMeta> {
+        self.index
+            .as_ref()
+            .or(self.children.iter().find_map(|child| match child {
+                NodeMeta::Article(article) => Some(article),
+                NodeMeta::Section(section) => section.first_article(),
+            }))
+    }
+
     /// Find a node with the given entity path, searching recursively through child nodes.
     pub fn find_recursive(&self, ids_path: &str) -> Option<NodeMeta> {
         if &self.entity_path.ids_path() == ids_path {
