@@ -78,6 +78,7 @@ fn compile_typst_to_html(path: impl AsRef<Path>) -> Result<String, anyhow::Error
         .arg("-fhtml")
         .args(["--features", "html"])
         .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
         .spawn()
         .context("failed to spawn typst")?;
 

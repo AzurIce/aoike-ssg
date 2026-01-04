@@ -1,12 +1,17 @@
 pub mod article;
+pub mod cli;
 pub mod utils;
 
 use crate::build::article::ArticleSource;
 use crate::{Article, EntityPath, Node, Section};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use relative_path::{PathExt, RelativePath};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 use time::UtcDateTime;
+use tracing::info;
+use tracing_indicatif::span_ext::IndicatifSpanExt;
 use walkdir::WalkDir;
 
 pub trait Parser {
@@ -58,6 +63,8 @@ pub fn build_article(
 ) -> Option<Article> {
     let vault_root = vault_root.as_ref();
     let rel_path = rel_path.as_ref();
+    let _span = tracing::info_span!("build_article", rel_path = rel_path.to_string()).entered();
+    // tracing::Span::current().pb_set_message(&format!("Building article: {}", rel_path));
     // println!("cargo::warning={}", format!("Building article {rel_path}"));
     let path = rel_path.to_logical_path(vault_root);
     if !path.exists() || !path.starts_with(vault_root) {
@@ -92,6 +99,8 @@ pub fn build_section(
 ) -> Option<Section> {
     let vault_root = vault_root.as_ref();
     let rel_path = rel_path.as_ref();
+    let _span = tracing::info_span!("build_section", rel_path = rel_path.to_string()).entered();
+    // tracing::Span::current().pb_set_message(&format!("Building section: {}", rel_path));
     let path = rel_path.to_logical_path(vault_root);
 
     if path.is_file() || !path.exists() || !path.starts_with(vault_root) {
@@ -107,23 +116,28 @@ pub fn build_section(
 
     let entity_path = EntityPath::new(vault_root.to_owned(), rel_path.to_owned());
 
+    let entries = ignore::WalkBuilder::new(&path)
+        .hidden(false)
+        .min_depth(Some(1))
+        .max_depth(Some(1))
+        .build();
+    let entries = entries.flatten().collect::<Vec<_>>();
+
+    let span = tracing::Span::current();
     // Children
-    // TODO: read_dir should not failed?
-    let mut children = std::fs::read_dir(&path)
-        .ok()
-        .into_iter()
-        .flat_map(|entries| {
-            entries.flatten().filter_map(|entry| {
-                let path = entry.path();
-                let rel_path = path.relative_to(vault_root).unwrap();
-                if path.is_dir() {
-                    build_section(vault_root, &rel_path)
-                        .map(Node::Section)
-                        .or(build_article(vault_root, &rel_path).map(Node::Article))
-                } else {
-                    build_article(vault_root, &rel_path).map(Node::Article)
-                }
-            })
+    let mut children = entries
+        .par_iter()
+        .filter_map(|entry| {
+            let _enter = span.enter();
+            let path = entry.path();
+            let rel_path = path.relative_to(vault_root).unwrap();
+            if path.is_dir() {
+                build_section(vault_root, &rel_path)
+                    .map(Node::Section)
+                    .or(build_article(vault_root, &rel_path).map(Node::Article))
+            } else {
+                build_article(vault_root, &rel_path).map(Node::Article)
+            }
         })
         .collect::<Vec<_>>();
 
@@ -152,9 +166,20 @@ pub fn build_section(
 }
 
 pub fn build_vault(root_dir: impl AsRef<Path>) -> crate::Vault {
+    let t = Instant::now();
+    let span = tracing::info_span!("build_vault");
+    let _enter = span.enter();
+    span.pb_set_style(&indicatif::ProgressStyle::default_spinner());
+    span.pb_set_message("Building vault structure...");
+
     let root_dir = root_dir.as_ref();
     let root_section = build_section(root_dir, "").expect("faild to build root section");
 
+    info!(
+        "Built {} entries, cost {:?}",
+        root_section.entry_cnt(),
+        t.elapsed()
+    );
     crate::Vault {
         root_dir: root_dir.to_owned(),
         root_section,
@@ -162,13 +187,38 @@ pub fn build_vault(root_dir: impl AsRef<Path>) -> crate::Vault {
 }
 
 pub fn export_vault(vault: &crate::Vault, out_dir: impl AsRef<Path>, public_url_prefix: &str) {
-    println!(
-        "cargo::warning={}",
-        format!(
-            "exporting vault with public_url_prefix: {}",
-            public_url_prefix
-        )
+    let t = Instant::now();
+    let span = tracing::info_span!("export_vault");
+    let _enter = span.enter();
+
+    tracing::info!(
+        "exporting vault with public_url_prefix: {}",
+        public_url_prefix
     );
+
+    fn count_articles(section: &crate::Section) -> u64 {
+        let mut count = 0;
+        if section.index.is_some() {
+            count += 1;
+        }
+        for child in &section.children {
+            match child {
+                crate::Node::Section(s) => count += count_articles(s),
+                crate::Node::Article(_) => count += 1,
+            }
+        }
+        count
+    }
+
+    let total = count_articles(&vault.root_section);
+    span.pb_set_length(total);
+    span.pb_set_style(
+        &indicatif::ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
+            .unwrap()
+            .progress_chars("#>-"),
+    );
+
     let public_url_prefix = public_url_prefix.trim_end_matches("/");
     let vault_root = &vault.root_dir;
     let out_dir = out_dir.as_ref();
@@ -204,6 +254,9 @@ pub fn export_vault(vault: &crate::Vault, out_dir: impl AsRef<Path>, public_url_
 
     // Helper to export an article
     let mut export_article = |article: &crate::Article| {
+        tracing::Span::current().pb_inc(1);
+        tracing::Span::current().pb_set_message(&article.title);
+
         // Process assets and rewrite HTML
 
         let mut article_clone = article.clone();
@@ -230,8 +283,8 @@ pub fn export_vault(vault: &crate::Vault, out_dir: impl AsRef<Path>, public_url_
             if let Some(parent) = dst_path.parent() {
                 std::fs::create_dir_all(parent).unwrap();
             }
-            println!(
-                "cargo::warning=copying from {} to {}",
+            tracing::debug!(
+                "copying from {} to {}",
                 src_path.display(),
                 dst_path.display()
             );
@@ -245,12 +298,9 @@ pub fn export_vault(vault: &crate::Vault, out_dir: impl AsRef<Path>, public_url_
         fn_export_article: &mut impl FnMut(&crate::Article),
     ) {
         if let Some(article) = section.index.as_ref() {
-            println!(
-                "cargo::warning={}",
-                format!(
-                    "Exporting index article for section {:?}",
-                    section.entity_path
-                )
+            tracing::debug!(
+                "Exporting index article for section {:?}",
+                section.entity_path
             );
             fn_export_article(article);
         }
@@ -281,4 +331,5 @@ pub fn export_vault(vault: &crate::Vault, out_dir: impl AsRef<Path>, public_url_
             }
         }
     }
+    info!("Export cost {:?}", t.elapsed())
 }

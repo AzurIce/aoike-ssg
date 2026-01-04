@@ -13,6 +13,9 @@ pub use relative_path;
 use relative_path::RelativePathBuf;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "build")]
+pub use build::cli::run_cli;
+
 // MARK: Id
 /// Identifier of an entity (slugified)
 #[derive(Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -161,6 +164,16 @@ pub struct Section {
 }
 
 impl Section {
+    pub fn entry_cnt(&self) -> usize {
+        self.children
+            .iter()
+            .map(|n| match n {
+                Node::Article(_) => 1,
+                Node::Section(section) => section.entry_cnt(),
+            })
+            .sum::<usize>()
+            + if self.index.is_some() { 1 } else { 0 }
+    }
     pub fn children(&self) -> impl Iterator<Item = &Node> {
         self.children.iter()
     }

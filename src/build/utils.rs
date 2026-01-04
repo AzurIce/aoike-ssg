@@ -19,7 +19,7 @@ pub fn patch_file(
     if let Some(old_inject) = old_inject.as_deref()
         && old_inject.trim() != inject.trim()
     {
-        println!("cargo:warning=patching file {path:?}");
+        tracing::warn!("patching file {path:?}");
         std::fs::write(path, res)?;
     }
     Ok(())
@@ -106,8 +106,8 @@ pub fn rewrite_html_links(
             // Calculate absolute path of the asset
             let abs_asset_path = article_dir.join(val);
             if !abs_asset_path.exists() || abs_asset_path.is_dir() {
-                println!(
-                    "cargo::warning=Asset not found: {} of {}",
+                tracing::warn!(
+                    "Asset not found: {} of {}",
                     abs_asset_path.display(),
                     article.entity_path.rel_path
                 );

@@ -8,32 +8,37 @@ edition = "2024"
 members = ["examples/leptos", "packages/aoike-leptos"]
 
 [workspace.dependencies]
-aoike = { path = "." }
+aoike = { path = ".", default-features = false }
 aoike-leptos = { path = "packages/aoike-leptos" }
 
 [features]
-default = []
+default = ["build"]
 build = [
     "dep:walkdir",
     "dep:pulldown-cmark",
     "dep:regex",
+    "dep:indicatif",
+    "dep:tracing-indicatif",
+    "dep:tracing-subscriber",
+    "dep:ignore",
+    "dep:rayon",
 ]
 
 [dependencies]
 time = { version = "0.3.43", features = ["wasm-bindgen", "serde"] }
 anyhow = "1.0.100"
 slug = "0.1.6"
+tracing = "0.1"
 
 walkdir = { version = "2.5.0", optional = true }
 pulldown-cmark = { version = "0.13.0", optional = true }
 regex = { version = "1.11.3", optional = true }
+indicatif = { version = "0.18", optional = true }
+tracing-indicatif = { version = "0.3", optional = true }
+tracing-subscriber = { version = "0.3", optional = true, features = ["env-filter"] }
+ignore = { version = "0.4", optional = true }
+rayon = { version = "1.11.0", optional = true }
 relative-path = { version = "2.0.1", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.147"
 clap = { version = "4.5", features = ["derive"] }
-
-[build-dependencies]
-rsass = "0.29.2"
-
-[dev-dependencies]
-tempfile = "3.24.0"
