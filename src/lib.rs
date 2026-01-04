@@ -180,6 +180,7 @@ impl Section {
                 .index
                 .as_ref()
                 .map(|article| article.title.clone())
+                .or(self.entity_path.rel_path.file_name().map(|s| s.to_string()))
                 .unwrap_or(self.entity_path.id().to_string()),
             children: self.children().map(Node::to_meta).collect(),
             index: self.index.as_ref().map(|a| a.to_meta()),
