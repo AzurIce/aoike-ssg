@@ -47,6 +47,7 @@ pub fn Note() -> impl IntoView {
     let params = use_params_map();
     let path = move || params.read().get("path");
     let vault = use_context::<VaultMeta>().expect("failed to get vault data");
+    let entity_path = Memo::new(move |_| path().map(|p| format!("notes/{}", p)));
     let note_meta = Memo::new(move |_| {
         path()
             .and_then(|p| p.split("/").next().map(|s| s.to_string()))
@@ -60,11 +61,12 @@ pub fn Note() -> impl IntoView {
     });
     let current_node = RwSignal::<Option<NodeMeta>>::new(None);
     Effect::new(move || {
+        // console_log(&format!("Path: {:?}", path()));
         if current_node.read().is_none() {
             current_node.set(note_meta.get().and_then(|section| {
-                section
-                    .index
-                    .map(NodeMeta::Article)
+                entity_path()
+                    .and_then(|p| section.find_recursive(&p))
+                    .or(section.index.map(NodeMeta::Article))
                     .or(section.children.first().cloned())
             }));
         }

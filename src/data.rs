@@ -99,6 +99,26 @@ pub struct SectionMeta {
     pub index: Option<ArticleMeta>,
 }
 
+impl SectionMeta {
+    /// Find a node with the given entity path, searching recursively through child nodes.
+    pub fn find_recursive(&self, ids_path: &str) -> Option<NodeMeta> {
+        if &self.entity_path.ids_path() == ids_path {
+            Some(NodeMeta::Section(self.clone()))
+        } else {
+            self.children.iter().find_map(|child| match child {
+                NodeMeta::Article(article) => {
+                    if &article.entity_path.ids_path() == ids_path {
+                        Some(NodeMeta::Article(article.clone()))
+                    } else {
+                        None
+                    }
+                }
+                NodeMeta::Section(section) => section.find_recursive(ids_path),
+            })
+        }
+    }
+}
+
 /// A node in the notes tree.
 ///
 /// Can represent a container (Section) or a leaf content page (Article).
