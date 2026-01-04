@@ -275,7 +275,113 @@ fn parse_git_ts(output: std::io::Result<std::process::Output>) -> i64 {
     }
 }
 
+use std::collections::HashMap;
+use std::sync::OnceLock;
+
+struct GitCache {
+    root: PathBuf,
+    created: HashMap<String, i64>,
+    updated: HashMap<String, i64>,
+}
+
+static GIT_CACHE: OnceLock<GitCache> = OnceLock::new();
+
+fn get_git_cache() -> &'static GitCache {
+    GIT_CACHE.get_or_init(|| {
+        tracing::info!("Loading git history for timestamp caching...");
+        let start = std::time::Instant::now();
+
+        let root = std::process::Command::new("git")
+            .arg("rev-parse")
+            .arg("--show-toplevel")
+            .output()
+            .ok()
+            .and_then(|out| String::from_utf8(out.stdout).ok())
+            .map(|s| PathBuf::from(s.trim()))
+            .unwrap_or_else(|| PathBuf::from("."))
+            .canonicalize()
+            .unwrap();
+
+        let mut created = HashMap::new();
+        let mut updated = HashMap::new();
+
+        let output = std::process::Command::new("git")
+            .arg("-c")
+            .arg("core.quotePath=false")
+            .arg("log")
+            .arg("--name-status")
+            .arg("--format=COMMIT %ct")
+            .output()
+            .ok();
+
+        if let Some(output) = output {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let mut current_ts = 0;
+            for line in stdout.lines() {
+                if line.starts_with("COMMIT ") {
+                    if let Ok(ts) = line["COMMIT ".len()..].parse::<i64>() {
+                        current_ts = ts;
+                    }
+                } else if !line.trim().is_empty() {
+                    let parts: Vec<&str> = line.split('\t').collect();
+                    if parts.len() >= 2 {
+                        let status = parts[0];
+                        let path_str = if status.starts_with('R') || status.starts_with('C') {
+                            if parts.len() >= 3 {
+                                parts[2]
+                            } else {
+                                continue;
+                            }
+                        } else {
+                            parts[1]
+                        };
+                        let path_str = path_str.trim_matches('"').to_string();
+
+                        updated.entry(path_str.clone()).or_insert(current_ts);
+
+                        if status.starts_with('A')
+                            || status.starts_with('R')
+                            || status.starts_with('C')
+                        {
+                            created.entry(path_str).or_insert(current_ts);
+                        }
+                    }
+                }
+            }
+        }
+
+        tracing::info!("Loaded git history in {:?}", start.elapsed());
+        GitCache {
+            root,
+            created,
+            updated,
+        }
+    })
+}
+
+fn normalize_path(path: &Path, root: &Path) -> Option<String> {
+    let rel = if path.is_absolute() {
+        path.strip_prefix(root).ok()?
+    } else {
+        path
+    };
+
+    Some(
+        rel.components()
+            .map(|c| c.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/"),
+    )
+}
+
 pub fn git_updated_ts(path: &Path) -> i64 {
+    let cache = get_git_cache();
+    if let Some(key) = normalize_path(path, &cache.root) {
+        if let Some(&ts) = cache.updated.get(&key) {
+            return ts;
+        }
+    }
+
     use std::process::Command;
     let output = Command::new("git")
         .arg("log")
@@ -291,6 +397,13 @@ pub fn git_updated_datetime(path: &Path) -> UtcDateTime {
 }
 
 pub fn git_created_ts(path: &Path) -> i64 {
+    let cache = get_git_cache();
+    if let Some(key) = normalize_path(path, &cache.root) {
+        if let Some(&ts) = cache.created.get(&key) {
+            return ts;
+        }
+    }
+
     use std::process::Command;
     let output = Command::new("git")
         .arg("log")
