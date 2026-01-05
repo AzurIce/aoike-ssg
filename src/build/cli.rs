@@ -1,3 +1,4 @@
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use tracing::{debug, info};
 
@@ -31,17 +32,29 @@ pub fn run_cli() {
         filter
     }
 
-    let indicatif_layer = tracing_indicatif::IndicatifLayer::new();
+    // Check if stderr is a terminal (TTY) to avoid issues in CI/non-interactive environments
+    let is_tty = std::io::stderr().is_terminal();
 
-    tracing_subscriber::registry()
-        .with(
-            fmt::layer()
-                .without_time()
-                .with_writer(indicatif_layer.get_stderr_writer()),
-        )
-        .with(indicatif_layer)
-        .with(build_filter())
-        .init();
+    if is_tty {
+        // Use indicatif layer with progress bars when running in a terminal
+        let indicatif_layer = tracing_indicatif::IndicatifLayer::new();
+
+        tracing_subscriber::registry()
+            .with(
+                fmt::layer()
+                    .without_time()
+                    .with_writer(indicatif_layer.get_stderr_writer()),
+            )
+            .with(indicatif_layer)
+            .with(build_filter())
+            .init();
+    } else {
+        // Use plain fmt layer without progress bars in non-TTY environments (CI, etc.)
+        tracing_subscriber::registry()
+            .with(fmt::layer().without_time())
+            .with(build_filter())
+            .init();
+    }
 
     let public_url_prefix = option_env!("TRUNK_BUILD_PUBLIC_URL").unwrap_or("/");
     let cli = Cli::parse();
