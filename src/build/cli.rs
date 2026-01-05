@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use tracing::{debug, info};
 
 use clap::Parser;
 #[derive(Parser)]
@@ -33,7 +34,11 @@ pub fn run_cli() {
     let indicatif_layer = tracing_indicatif::IndicatifLayer::new();
 
     tracing_subscriber::registry()
-        .with(fmt::layer().with_writer(indicatif_layer.get_stderr_writer()))
+        .with(
+            fmt::layer()
+                .without_time()
+                .with_writer(indicatif_layer.get_stderr_writer()),
+        )
         .with(indicatif_layer)
         .with(build_filter())
         .init();
@@ -41,15 +46,17 @@ pub fn run_cli() {
     let public_url_prefix = option_env!("TRUNK_BUILD_PUBLIC_URL").unwrap_or("/");
     let cli = Cli::parse();
 
-    tracing::info!("Building vault from: {:?}", cli.vault);
+    info!("Building vault from: {:?}", cli.vault);
+
     let root = cli
         .vault
         .canonicalize()
         .unwrap_or_else(|_| cli.vault.clone());
+    debug!("root: {root:?}");
     let vault = crate::build::build_vault(&root);
 
-    tracing::info!("Exporting vault to: {:?}", cli.output);
+    info!("Exporting vault to: {:?}", cli.output);
     crate::build::export_vault(&vault, &cli.output, public_url_prefix);
 
-    tracing::info!("Done!");
+    info!("Done!");
 }

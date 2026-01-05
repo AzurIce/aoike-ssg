@@ -122,6 +122,9 @@ impl EntityPath {
             .last()
             .expect("EntityPath must have at least one ID")
     }
+    pub fn abs_path(&self) -> PathBuf {
+        self.rel_path.to_logical_path(&self.vault_root)
+    }
 }
 
 /// An article.

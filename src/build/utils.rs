@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use regex::Regex;
 use relative_path::PathExt;
 use time::UtcDateTime;
+#[allow(unused)]
+use tracing::{debug, warn};
 
 use crate::{Id, Ids};
 
@@ -99,17 +101,29 @@ pub fn rewrite_html_links(
                 return format!(r#"{}="{}""#, attr, val);
             }
             let article_path = article.entity_path.rel_path.to_path(vault_root);
-            let Some(article_dir) = article_path.parent() else {
-                return format!(r#"{}="{}""#, attr, val);
-            };
+            let article_dir = article_path.parent().unwrap();
+
+            // debug!(
+            //     "val: {val:?} -> {:?} ({:?})",
+            //     percent_encoding::percent_decode_str(val).decode_utf8_lossy(),
+            //     percent_encoding::percent_decode_str(val).decode_utf8()
+            // );
+            let val_decoded = percent_encoding::percent_decode_str(val)
+                .decode_utf8()
+                .unwrap_or(std::borrow::Cow::Borrowed(val));
 
             // Calculate absolute path of the asset
-            let abs_asset_path = article_dir.join(val);
+            let abs_asset_path = article_dir.join(val_decoded.as_ref());
+            // debug!("Asset {val} at {article_dir:?}: {abs_asset_path:?}");
             if !abs_asset_path.exists() || abs_asset_path.is_dir() {
-                tracing::warn!(
-                    "Asset not found: {} of {}",
-                    abs_asset_path.display(),
-                    article.entity_path.rel_path
+                warn!(
+                    r#"Asset url "{val}" not found relative to "{}": {}"#,
+                    article
+                        .entity_path
+                        .rel_path
+                        .to_string()
+                        .replace(" ", r#"\ "#),
+                    abs_asset_path.to_string_lossy(),
                 );
                 return format!(r#"{}="{}""#, attr, val);
             }
@@ -278,7 +292,7 @@ fn parse_git_ts(output: std::io::Result<std::process::Output>) -> i64 {
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-struct GitCache {
+pub struct GitCache {
     root: PathBuf,
     created: HashMap<String, i64>,
     updated: HashMap<String, i64>,
@@ -286,7 +300,7 @@ struct GitCache {
 
 static GIT_CACHE: OnceLock<GitCache> = OnceLock::new();
 
-fn get_git_cache() -> &'static GitCache {
+pub fn get_git_cache() -> &'static GitCache {
     GIT_CACHE.get_or_init(|| {
         tracing::info!("Loading git history for timestamp caching...");
         let start = std::time::Instant::now();

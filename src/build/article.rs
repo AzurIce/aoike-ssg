@@ -1,6 +1,7 @@
 use std::{ops::Deref, path::Path};
 
 use anyhow::Context;
+use pulldown_cmark::Options;
 
 use crate::build::{Entity, Parser, utils};
 
@@ -96,7 +97,19 @@ impl Parser for MarkdownArticleParser {
     fn try_parse(entity: Entity) -> Result<Self::Output, anyhow::Error> {
         let content = std::str::from_utf8(&entity.content)?;
 
-        let parser = pulldown_cmark::Parser::new(&content);
+        let mut options = Options::empty();
+        options.extend([
+            Options::ENABLE_TABLES,
+            Options::ENABLE_FOOTNOTES,
+            Options::ENABLE_STRIKETHROUGH,
+            Options::ENABLE_TASKLISTS,
+            Options::ENABLE_HEADING_ATTRIBUTES,
+            Options::ENABLE_MATH,
+            Options::ENABLE_GFM,
+            Options::ENABLE_WIKILINKS,
+            Options::ENABLE_SMART_PUNCTUATION,
+        ]);
+        let parser = pulldown_cmark::Parser::new_ext(&content, options);
         let mut content_html = String::new();
         pulldown_cmark::html::push_html(&mut content_html, parser);
 

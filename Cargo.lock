@@ -103,6 +103,7 @@ dependencies = [
  "clap",
  "ignore",
  "indicatif",
+ "percent-encoding",
  "pulldown-cmark",
  "rayon",
  "regex",

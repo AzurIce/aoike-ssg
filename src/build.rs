@@ -3,6 +3,7 @@ pub mod cli;
 pub mod utils;
 
 use crate::build::article::ArticleSource;
+use crate::build::utils::get_git_cache;
 use crate::{Article, EntityPath, Node, Section};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use relative_path::{PathExt, RelativePath};
@@ -10,7 +11,8 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use time::UtcDateTime;
-use tracing::info;
+#[allow(unused)]
+use tracing::{debug, info};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 use walkdir::WalkDir;
 
@@ -172,6 +174,8 @@ pub fn build_vault(root_dir: impl AsRef<Path>) -> crate::Vault {
     span.pb_set_style(&indicatif::ProgressStyle::default_spinner());
     span.pb_set_message("Building vault structure...");
 
+    get_git_cache();
+
     let root_dir = root_dir.as_ref();
     let root_section = build_section(root_dir, "").expect("faild to build root section");
 
@@ -283,11 +287,11 @@ pub fn export_vault(vault: &crate::Vault, out_dir: impl AsRef<Path>, public_url_
             if let Some(parent) = dst_path.parent() {
                 std::fs::create_dir_all(parent).unwrap();
             }
-            tracing::debug!(
-                "copying from {} to {}",
-                src_path.display(),
-                dst_path.display()
-            );
+            // debug!(
+            //     "copying from {} to {}",
+            //     src_path.display(),
+            //     dst_path.display()
+            // );
             std::fs::copy(&src_path, &dst_path).unwrap();
             generated_files.insert(dst_path);
         }
@@ -298,10 +302,10 @@ pub fn export_vault(vault: &crate::Vault, out_dir: impl AsRef<Path>, public_url_
         fn_export_article: &mut impl FnMut(&crate::Article),
     ) {
         if let Some(article) = section.index.as_ref() {
-            tracing::debug!(
-                "Exporting index article for section {:?}",
-                section.entity_path
-            );
+            // debug!(
+            //     "Exporting index article for section {:?}",
+            //     section.entity_path
+            // );
             fn_export_article(article);
         }
         for child in &section.children {
