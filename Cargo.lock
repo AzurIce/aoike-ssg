@@ -95,6 +95,7 @@ dependencies = [
  "syn 2.0.106",
  "time",
  "tracing",
+ "tracing-subscriber",
  "wasm-bindgen-futures",
 ]
 
