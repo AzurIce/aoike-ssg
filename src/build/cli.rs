@@ -1,3 +1,4 @@
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use tracing::{debug, info};
 
@@ -15,7 +16,6 @@ pub struct Cli {
 }
 
 pub fn run_cli() {
-    use std::io::IsTerminal;
     use tracing::level_filters::LevelFilter;
     use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
