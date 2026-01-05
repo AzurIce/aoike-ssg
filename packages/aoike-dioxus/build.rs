@@ -1,7 +1,9 @@
+use tracing_subscriber::fmt;
+
 fn main() {
     // Initialize a simple tracing subscriber to handle rsass's tracing events
     // This prevents panics from tracing-indicatif in CI environments
-    use tracing_subscriber::fmt;
+    // try_init() returns an error if a subscriber is already initialized, which is fine
     let _ = fmt()
         .with_target(false)
         .with_level(false)
