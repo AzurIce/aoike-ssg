@@ -61,22 +61,29 @@ pub fn Note() -> impl IntoView {
     });
     let current_node = RwSignal::<Option<NodeMeta>>::new(None);
     Effect::new(move || {
-        // console_log(&format!("Path: {:?}", path()));
-        // console_log(&format!("Current Node: {:?}", current_node.get()));
-        if current_node.read().is_none() {
-            current_node.set(note_meta.get().and_then(|section| {
+        if current_node.read().is_none()
+            && let Some(node) = note_meta.get().and_then(|section| {
                 entity_path()
-                    .and_then(|p| section.find_recursive(&p))
+                    .and_then(|p| {
+                        let node = section.find_recursive(&p);
+                        if let Some(NodeMeta::Article(_)) = node {
+                            node
+                        } else {
+                            None
+                        }
+                    })
                     .or(section.index.clone().map(NodeMeta::Article))
                     .or(section.first_article().cloned().map(NodeMeta::Article))
-            }));
-            if let Some(current_node) = current_node.get() {
-                let navigate = leptos_router::hooks::use_navigate();
-                navigate(
-                    &format!("{BASE_URL}/{}", current_node.entity_path().ids_path()),
-                    NavigateOptions::default(),
-                );
-            }
+            })
+        {
+            let ids_path = node.entity_path().ids_path();
+            console_log(&ids_path);
+            current_node.set(Some(node));
+            let navigate = leptos_router::hooks::use_navigate();
+            navigate(
+                &format!("{BASE_URL}/{}", ids_path),
+                NavigateOptions::default(),
+            );
         }
     });
 
