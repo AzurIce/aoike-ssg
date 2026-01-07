@@ -7,6 +7,7 @@ use crate::{
     BASE_URL,
     components::article::Article,
     layout::tri_column::{Main, TriColumn},
+    utils::based_url,
 };
 
 #[component]
@@ -38,7 +39,7 @@ pub fn Post() -> impl IntoView {
                                     on_failed=|err| {
                                         let navigate = leptos_router::hooks::use_navigate();
                                         navigate(
-                                            &format!("{BASE_URL}/4o4"),
+                                            &based_url("4o4"),
                                             NavigateOptions::default(),
                                         );
                                         console_debug_log(&format!("{err:?}"));

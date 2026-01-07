@@ -1,3 +1,14 @@
+use crate::BASE_URL;
+
+pub fn based_url(path: impl AsRef<str>) -> String {
+    let path = path.as_ref();
+    if BASE_URL.is_empty() {
+        format!("/{}", path)
+    } else {
+        format!("/{BASE_URL}/{}", path)
+    }
+}
+
 // From https://github.com/thaw-ui/thaw/blob/main/thaw_utils/src/dom/mount_style.rs
 pub fn mount_style(id: &str, content: &'static str) {
     let id = format!("aoike-id-{id}");

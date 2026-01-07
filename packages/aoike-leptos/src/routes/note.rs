@@ -10,6 +10,7 @@ use crate::{
     BASE_URL,
     components::article::Article,
     layout::tri_column::{Left, Main, TriColumn},
+    utils::based_url,
 };
 
 #[component]
@@ -81,7 +82,7 @@ pub fn Note() -> impl IntoView {
             current_node.set(Some(node));
             let navigate = leptos_router::hooks::use_navigate();
             navigate(
-                &format!("{BASE_URL}/{}", ids_path),
+                &based_url(format!("{}", ids_path)),
                 NavigateOptions::default(),
             );
         }
@@ -90,7 +91,7 @@ pub fn Note() -> impl IntoView {
     Effect::new(move || {
         if note_meta().is_none() {
             let navigate = leptos_router::hooks::use_navigate();
-            navigate(&format!("{BASE_URL}/4o4"), NavigateOptions::default());
+            navigate(&based_url("4o4"), NavigateOptions::default());
         }
     });
 
