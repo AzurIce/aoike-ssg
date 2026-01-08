@@ -12,11 +12,12 @@ pub fn main() {
         github_owner: Some("aoike".to_string()),
         github_repo: Some("aoike".to_string()),
         vault_base_url: Some("/vault".to_string()),
-        giscus_options: Some(GiscusOptions::new(
-            "your-repo".to_string(),
-            "your-repo-id".to_string(),
-            "your-category-id".to_string(),
-        )),
+        giscus_options: None,
+        // giscus_options: Some(GiscusOptions::new(
+        //     "your-repo".to_string(),
+        //     "your-repo-id".to_string(),
+        //     "your-category-id".to_string(),
+        // )),
         ..Default::default()
     };
 

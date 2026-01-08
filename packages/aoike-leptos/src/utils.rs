@@ -1,11 +1,13 @@
 use crate::BASE_URL;
 
 pub fn based_url(path: impl AsRef<str>) -> String {
-    let path = path.as_ref();
-    if BASE_URL.is_empty() {
-        format!("/{}", path)
+    let path = path.as_ref().trim_start_matches('/');
+    let base = BASE_URL.trim_matches('/');
+
+    if base.is_empty() {
+        format!("/{path}")
     } else {
-        format!("/{BASE_URL}/{}", path)
+        format!("/{base}/{path}")
     }
 }
 

@@ -1,4 +1,3 @@
-use crate::BASE_URL;
 use aoike::data::VaultMeta;
 use leptos::prelude::*;
 use leptos_router::components::A;
@@ -8,6 +7,7 @@ use crate::{
     ConfigContext,
     api::fetch_article,
     layout::tri_column::{Main, TriColumn},
+    utils::based_url,
 };
 
 #[component]
@@ -51,10 +51,10 @@ pub fn Index() -> impl IntoView {
                                             )}
                                         </span>
                                         <A
-                                            href=format!(
-                                                "{BASE_URL}/posts/{}",
+                                            href=based_url(format!(
+                                                "posts/{}",
                                                 blog.entity_path.ids.last().unwrap(),
-                                            )
+                                            ))
                                             {..}
                                             class="underline hover:underline-gray-400"
                                         >
@@ -113,7 +113,7 @@ pub fn Hero() -> impl IntoView {
                 .avatar
                 .clone()
                 .map(|avatar| {
-                    let avatar = format!("{BASE_URL}/static/{}", avatar.trim_start_matches("/"));
+                    let avatar = based_url(format!("static/{}", avatar.trim_start_matches("/")));
                     view! { <img class="size-40 rounded" src=avatar /> }
                 })} <div class="flex flex-col items-center justify-around p-2 p-b-1 gap-3">
                 <span class="text-xl lxgw">"< " {title} " />"</span>
@@ -140,14 +140,14 @@ pub fn Hero() -> impl IntoView {
                         .clone()
                         .map(|owner| {
                             view! {
-                                <A
+                                <a
                                     href=format!("https://github.com/{}", owner)
                                     target="_blank"
-                                    {..}
+                                    rel="noreferrer"
                                     class="size-8 gap-1 nav-btn"
                                 >
                                     <div class="i-fa6-brands-github text-xl"></div>
-                                </A>
+                                </a>
                             }
                         })}
                     {config

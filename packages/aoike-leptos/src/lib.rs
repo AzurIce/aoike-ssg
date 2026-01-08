@@ -52,6 +52,7 @@ pub struct ConfigContext {
 
 const CSS_MAIN: &str = include_str!("../css/main.css");
 const CSS_UNO: &str = include_str!("../css/uno.css");
+// Should starts with "/" (absolute) and NOT end with "/"
 const BASE_URL: &str = option_env!("TRUNK_BUILD_PUBLIC_URL").unwrap_or("");
 
 #[component]
@@ -64,6 +65,7 @@ pub fn CssProvider(children: Children) -> impl IntoView {
 #[component]
 pub fn AoikeApp(config: ConfigContext) -> impl IntoView {
     provide_context(config.clone());
+    console_debug_log(&format!("base url: {BASE_URL}"));
 
     let vault_resource = LocalResource::new(move || {
         let vault_base_url = config

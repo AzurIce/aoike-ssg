@@ -7,7 +7,6 @@ use leptos::{
 use leptos_router::{NavigateOptions, components::A, hooks::use_params_map};
 
 use crate::{
-    BASE_URL,
     components::article::Article,
     layout::tri_column::{Left, Main, TriColumn},
     utils::based_url,
@@ -26,7 +25,7 @@ pub fn Notes() -> impl IntoView {
                         .iter()
                         .cloned()
                         .map(|note| {
-                            let href = format!("{BASE_URL}/{}", note.entity_path.ids_path());
+                            let href = based_url(note.entity_path.ids_path());
                             console_debug_log(&format!("{:?}", note));
                             view! {
                                 <div class="flex items-center p-2 rounded border border-slate-200 hover:border-slate-400 hover:bg-gray-100">
@@ -146,8 +145,8 @@ pub fn NoteTreeNode(node: NodeMeta, current_node: RwSignal<Option<NodeMeta>>) ->
         NodeMeta::Section(section) => section.title.clone(),
     };
     let href = match &node {
-        NodeMeta::Article(article) => format!("{BASE_URL}/{}", article.entity_path.ids_path()),
-        NodeMeta::Section(section) => format!("{BASE_URL}/{}", section.entity_path.ids_path()),
+        NodeMeta::Article(article) => based_url(article.entity_path.ids_path()),
+        NodeMeta::Section(section) => based_url(section.entity_path.ids_path()),
     };
     let active = enclose!((node) move || {
         current_node.get().map(|n|
@@ -228,7 +227,7 @@ pub fn NoteTree(
     root_section: SectionMeta,
     current_node: RwSignal<Option<NodeMeta>>,
 ) -> impl IntoView {
-    let href = format!("{BASE_URL}/{}", root_section.entity_path.ids_path());
+    let href = based_url(root_section.entity_path.ids_path());
     let first_child = root_section.children.first().cloned();
     let index = root_section.index.map(NodeMeta::Article);
 
@@ -248,7 +247,7 @@ pub fn NoteTree(
         // </div>
         <div class="mb-2 px-2 flex items-center gap-2">
             <A
-                href=format!("{BASE_URL}/notes")
+                href=based_url("notes")
                 {..}
                 class="text-slate-500 hover:text-slate-700 transition-colors"
                 title="Back to Notes"

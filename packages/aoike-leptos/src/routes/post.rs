@@ -4,7 +4,6 @@ use leptos_router::{NavigateOptions, components::A, hooks::use_params_map};
 use time::OffsetDateTime;
 
 use crate::{
-    BASE_URL,
     components::article::Article,
     layout::tri_column::{Main, TriColumn},
     utils::based_url,
@@ -80,7 +79,7 @@ pub fn PostCard(meta: ArticleMeta) -> impl IntoView {
 
     view! {
         <div class="w-full flex flex-col gap-2 p-2 rounded border border-slate-200 hover:border-slate-400">
-            <A href=format!("{BASE_URL}/posts/{}", meta.entity_path.id().unwrap())>
+            <A href=based_url(format!("posts/{}", meta.entity_path.id().unwrap()))>
                 <h2>{meta.title}</h2>
             </A>
             <div class="flex gap-2">
