@@ -138,6 +138,9 @@ pub struct Article {
     pub content_html: String,
     pub created: UtcDateTime,
     pub updated: UtcDateTime,
+    pub tags: Vec<String>,
+    pub extra: Option<serde_json::Value>,
+    pub outlinks: Vec<String>,
 }
 
 impl Article {
@@ -148,6 +151,8 @@ impl Article {
             summary: self.summary_html.clone(),
             created: self.created.unix_timestamp(),
             updated: self.updated.unix_timestamp(),
+            tags: self.tags.clone(),
+            extra: self.extra.clone(),
         }
     }
 
@@ -155,6 +160,8 @@ impl Article {
         data::ArticleData {
             meta: self.to_meta(),
             content: self.content_html.clone(),
+            outlinks: self.outlinks.clone(),
+            backlinks: vec![],
         }
     }
 }
@@ -164,6 +171,7 @@ pub struct Section {
     pub entity_path: EntityPath,
     pub index: Option<Article>,
     pub children: Vec<Node>,
+    pub description: Option<String>,
 }
 
 impl Section {
@@ -200,6 +208,7 @@ impl Section {
                 .unwrap_or(self.entity_path.id().to_string()),
             children: self.children().map(Node::to_meta).collect(),
             index: self.index.as_ref().map(|a| a.to_meta()),
+            description: self.description.clone(),
         }
     }
 }
@@ -283,7 +292,7 @@ impl Vault {
             .map(|s| s.to_meta())
             .collect();
 
-        data::VaultMeta { posts, notes }
+        data::VaultMeta { version: env!("CARGO_PKG_VERSION").to_string(), posts, notes }
     }
 }
 

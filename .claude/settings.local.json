@@ -2,7 +2,17 @@
   "permissions": {
     "allow": [
       "Bash(mkdir:*)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Bash(ls:*)",
+      "Bash(git -C E:aoike log --oneline -20)",
+      "Bash(git -C \"E:/aoike\" log --oneline -20)",
+      "Bash(cargo build:*)",
+      "Bash(dir:*)",
+      "Bash(icacls:*)",
+      "Bash(cmd /c \"dir E:\\\\aoike\\\\examples\\\\leptos\\\\dist\")",
+      "Bash(cmd /c \"if exist E:\\\\aoike\\\\examples\\\\leptos\\\\dist \\(echo EXISTS\\) else \\(echo NOT_EXISTS\\)\")",
+      "Bash(cmd /c \"rmdir /s /q E:\\\\aoike\\\\examples\\\\leptos\\\\dist\")",
+      "Bash(powershell:*)"
     ],
     "deny": [],
     "ask": []

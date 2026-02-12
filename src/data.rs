@@ -60,6 +60,8 @@ impl From<crate::EntityPath> for EntityPath {
 /// This contains the metadata for the entire vault, including all posts and the notes tree.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VaultMeta {
+    /// Protocol version (e.g. "0.2.0").
+    pub version: String,
     /// A flat list of all blog posts, typically sorted by creation date.
     pub posts: Vec<ArticleMeta>,
     /// The root sections of the notes tree (e.g., "notes").
@@ -81,6 +83,12 @@ pub struct ArticleMeta {
     pub created: i64,
     /// The last update timestamp (Unix timestamp).
     pub updated: i64,
+    /// Tags associated with this article.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    /// Arbitrary extra metadata (e.g. from frontmatter).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extra: Option<serde_json::Value>,
 }
 
 /// Metadata for a section (directory) in the vault.
@@ -97,6 +105,9 @@ pub struct SectionMeta {
     /// The index article for this section, if one exists (e.g., `index.md`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub index: Option<ArticleMeta>,
+    /// A short description of this section.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 impl SectionMeta {
@@ -167,4 +178,10 @@ pub struct ArticleData {
     pub meta: ArticleMeta,
     /// The full HTML content of the article.
     pub content: String,
+    /// Outgoing links (ids_path of linked articles).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outlinks: Vec<String>,
+    /// Incoming links (ids_path of articles that link to this one).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub backlinks: Vec<String>,
 }

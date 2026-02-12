@@ -45,6 +45,9 @@ impl ArticleSource {
             content_html: self.content_html.clone(),
             created: self.entity.created,
             updated: self.entity.updated,
+            tags: vec![],
+            extra: None,
+            outlinks: vec![],
         }
     }
 }

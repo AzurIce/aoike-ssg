@@ -164,6 +164,7 @@ pub fn build_section(
         entity_path,
         children,
         index,
+        description: None,
     })
 }
 

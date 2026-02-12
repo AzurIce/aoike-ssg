@@ -16,10 +16,13 @@ pub mod routes {
     pub use index::Index;
 
     pub mod post;
-    pub use post::{Post, Posts};
+    pub use post::{Post, Posts, Tags, Tag};
 
     pub mod note;
     pub use note::{Note, Notes};
+
+    pub mod search;
+    pub use search::Search;
 }
 
 mod utils;
@@ -97,6 +100,9 @@ pub fn AoikeApp(config: ConfigContext) -> impl IntoView {
                                                 <Route path=path!("/") view=routes::Index />
                                                 <Route path=path!("/posts") view=routes::Posts />
                                                 <Route path=path!("/posts/:slug") view=routes::Post />
+                                                <Route path=path!("/tags") view=routes::Tags />
+                                                <Route path=path!("/tags/:tag") view=routes::Tag />
+                                                <Route path=path!("/search") view=routes::Search />
                                                 <Route path=path!("/notes") view=routes::Notes />
                                                 <Route path=path!("/notes/*path") view=routes::Note />
                                                 <Route path=path!("/4o4") view=NotFoundPage />

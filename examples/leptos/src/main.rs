@@ -1,4 +1,4 @@
-use aoike_leptos::{AoikeApp, ConfigContext, components::giscus::GiscusOptions};
+use aoike_leptos::{AoikeApp, ConfigContext};
 use leptos::prelude::*;
 
 pub fn main() {
@@ -11,7 +11,8 @@ pub fn main() {
         avatar: Some("avatar.jpg".to_string()),
         github_owner: Some("aoike".to_string()),
         github_repo: Some("aoike".to_string()),
-        vault_base_url: Some("/vault".to_string()),
+        // vault_base_url: Some("/vault".to_string()),
+        vault_base_url: Some("http://127.0.0.1:8080/".to_string()),
         giscus_options: None,
         // giscus_options: Some(GiscusOptions::new(
         //     "your-repo".to_string(),

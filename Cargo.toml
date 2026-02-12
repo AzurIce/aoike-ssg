@@ -5,7 +5,7 @@ authors = ["AzurIce <973562770@qq.com>"]
 edition = "2024"
 
 [workspace]
-members = ["examples/leptos", "packages/aoike-leptos"]
+members = ["examples/leptos", "packages/aoike-leptos", "packages/aoike-obsidian"]
 
 [workspace.dependencies]
 aoike = { path = ".", default-features = false }

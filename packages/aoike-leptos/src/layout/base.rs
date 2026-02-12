@@ -48,9 +48,9 @@ pub fn Header() -> impl IntoView {
                 <A href=based_url("notes") {..} class="h-10 gap-1 nav-btn text-sm p-x-4">
                     "笔记"
                 </A>
-                // <A href=based_url("search") {..} class="h-10 gap-1 nav-btn text-sm p-x-4">
-                // "搜索"
-                // </A>
+                <A href=based_url("search") {..} class="h-10 gap-1 nav-btn text-sm p-x-4">
+                    "搜索"
+                </A>
                 {config
                     .github_owner
                     .clone()

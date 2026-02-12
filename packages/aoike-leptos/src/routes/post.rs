@@ -74,6 +74,7 @@ pub fn Posts() -> impl IntoView {
 #[component]
 pub fn PostCard(meta: ArticleMeta) -> impl IntoView {
     let summary_html = meta.summary.clone();
+    let tags = meta.tags.clone();
     let created = OffsetDateTime::from_unix_timestamp(meta.created).unwrap();
     let updated = OffsetDateTime::from_unix_timestamp(meta.updated).unwrap();
 
@@ -92,7 +93,94 @@ pub fn PostCard(meta: ArticleMeta) -> impl IntoView {
                     {format!("{}-{}-{}", updated.year(), u8::from(updated.month()), updated.day())}
                 </span>
             </div>
+            {if !tags.is_empty() {
+                Some(view! {
+                    <div class="flex gap-1 flex-wrap">
+                        {tags
+                            .into_iter()
+                            .map(|tag| {
+                                let tag_href = based_url(format!("tags/{}", tag));
+                                view! {
+                                    <A href={tag_href} {..} class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200">
+                                        {tag}
+                                    </A>
+                                }
+                            })
+                            .collect_view()}
+                    </div>
+                })
+            } else {
+                None
+            }}
             <div class="summary" inner_html=summary_html></div>
         </div>
+    }
+}
+
+/// Tags list page — shows all unique tags with article counts.
+#[component]
+pub fn Tags() -> impl IntoView {
+    let vault = use_context::<VaultMeta>().expect("VaultData missing");
+
+    let mut tag_counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for post in &vault.posts {
+        for tag in &post.tags {
+            *tag_counts.entry(tag.clone()).or_default() += 1;
+        }
+    }
+
+    view! {
+        <TriColumn>
+            <Main slot>
+                <h1>"标签"</h1>
+                <div class="flex gap-2 flex-wrap">
+                    {tag_counts
+                        .into_iter()
+                        .map(|(tag, count)| {
+                            let tag_href = based_url(format!("tags/{}", tag));
+                            view! {
+                                <A href={tag_href} {..} class="px-3 py-1 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200">
+                                    {format!("{} ({})", tag, count)}
+                                </A>
+                            }
+                        })
+                        .collect_view()}
+                </div>
+            </Main>
+        </TriColumn>
+    }
+}
+
+/// Tag detail page — shows articles filtered by a specific tag.
+#[component]
+pub fn Tag() -> impl IntoView {
+    let params = use_params_map();
+    let tag = move || params.read().get("tag").unwrap_or_default();
+
+    let vault = use_context::<VaultMeta>().expect("VaultData missing");
+
+    view! {
+        <TriColumn>
+            <Main slot>
+                {move || {
+                    let current_tag = tag();
+                    let filtered: Vec<_> = vault
+                        .posts
+                        .iter()
+                        .filter(|p| p.tags.contains(&current_tag))
+                        .cloned()
+                        .collect();
+                    view! {
+                        <h1>{format!("标签: {}", current_tag)}</h1>
+                        {filtered
+                            .into_iter()
+                            .map(|post| {
+                                view! { <PostCard meta=post /> }
+                            })
+                            .collect_view()}
+                    }
+                }}
+            </Main>
+        </TriColumn>
     }
 }
