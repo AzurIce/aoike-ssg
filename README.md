@@ -1,37 +1,39 @@
 # Aoike
 
-An experimental static site generator based on `build.rs`.
+An experimental static site generator that decouples content building from frontend rendering.
 
 ## Usage
 
-Aoike is highly customizable, with simple configuration. Check the examples in `example/` for more details.
+Aoike is designed to be flexible. It separates the content processing logic from the presentation layer.
 
-`aoike` crate provides the core data structures and the basic parsing and codegen logic.
+`aoike` crate provides the core data structures and the build logic to convert your Markdown/Typst vault into a JSON-based API.
 
-`aoike-dioxus` and `aoike-sycamore` are the implementations of `AoikeApp` for Dioxus and Sycamore respectively.It is recommended to use `aoike-sycamore` instead of `aoike-dioxus`.
+`aoike-leptos` is the reference implementation of a frontend app using Leptos, which consumes the generated JSON data.
 
 ## Design Philosophy
 
-The whole philosophy is "the site can be abstracted into pure data structures", so you can use any framework you want to build your site.
+The core philosophy is **"Content as Data, Frontend as App"**.
 
-And the whole process can be divided into two phases:
+Instead of generating static HTML files for every page or compiling content into the WASM binary (which bloats the size), Aoike treats your content vault as a database.
 
-1. The build phase:
-    This normally happends in the `build.rs`, we:
+The process consists of two decoupled phases:
 
-    - Read index content from `doc-src/index.md` file.
-    - Read blog files from `doc-src/posts` directory.
-    - Use git cli to get create and update time of each file.
-    - Parse markdown to html with `pulldown-cmark`.
-    - Assemble the `Post` data, and generate a `docsgen.rs` file containing the data defination.
+1. **The Build Phase**:
+   This can happen via the `aoike` CLI or a `build.rs` script. We:
+    - Scan your vault directory (posts, notes, etc.).
+    - Use `git` to retrieve creation and update timestamps.
+    - Parse Markdown (via `pulldown-cmark`) or Typst to HTML.
+    - **Asset Handling**: Automatically detect relative links to local images/files, rewrite them to absolute URLs, and copy the assets to the output directory.
+    - Export a `vault.json` (manifest/tree structure) and individual JSON files for each article.
 
-2. The runtime phase:
-    This depends on the framework you use, for example, in Dioxus, you can use `aoike-dioxus::AoikeApp` to launch an app, and in Sycamore, you can use `aoike-sycamore::AoikeApp` to launch an app.
+2. **The Runtime Phase**:
+   The frontend is a standalone Single Page Application (SPA) (e.g., built with Leptos).
+    - On load, it fetches `vault.json` to build the posts and notes list.
+    - When a user navigates to a page, it fetches the corresponding JSON file for that article on demand.
+    - This ensures the initial load is fast and the app remains lightweight, regardless of how much content you have.
 
-With this two phases, there are infinite possibilities:
-- You can use `pulldown-cmark` to parse markdown files to html, and convert html to rsx. (just like the example)
-- You can use `typst` to compile typst files to html, and convert html to rsx.
-- You can write a scraper to retrive data from internet and build rsx for a statistic app.
-- You can access your filesystem of assets (like videos and images), and generate a static site to show them.
-- You can encrypt your html source, and implement decrypt method for it with a password input in the app.
-- ...
+With this architecture:
+- **Framework Agnostic**: You can build the frontend with Leptos, Dioxus, React, Vue, or anything that can fetch JSON.
+- **Incremental Loading**: Users only download the content they view.
+- **Rich Content**: Support for Markdown and Typst out of the box.
+- **Asset Management**: Local assets in your vault just work, mirroring the folder structure in the output.

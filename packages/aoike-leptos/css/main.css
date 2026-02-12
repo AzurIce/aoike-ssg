@@ -1,0 +1,427 @@
+@charset "UTF-8";
+:root {
+  --accent-color: #f67c91;
+  --accent-color-light: color-mix(in srgb, var(--accent-color) 60%, white);
+  --gray: #cccccc;
+  --background-color: white;
+  --text-primary: #333;
+  --text-secondary: #555;
+  --link-color: var(--accent-color);
+  --link-hover-color: color-mix(in srgb, var(--accent-color) 70%, black);
+  --list-marker-color: var(--accent-color);
+  --blockquote-bg: #f9f9f9;
+  --blockquote-border: var(--accent-color-light);
+  --blockquote-text: var(--text-secondary);
+  --code-bg: color-mix(in srgb, var(--accent-color) 8%, white);
+  --code-text: color-mix(in srgb, var(--accent-color) 80%, black);
+  --code-border: color-mix(in srgb, var(--accent-color) 20%, white);
+  --pre-bg: #fdfcfd;
+  --pre-border: color-mix(in srgb, var(--accent-color) 25%, white);
+  --pre-shadow: color-mix(in srgb, var(--accent-color) 10%, transparent);
+  --pre-code-text: #333;
+  --figcaption-text: var(--text-secondary);
+  --table-header-bg: #f5f5f5;
+  --table-header-text: #333;
+  --table-border: #ddd;
+  --table-row-even: #fafafa;
+  --table-row-hover: #f0f0f0;
+}
+
+@counter-style emoticon {
+  system: cyclic;
+  symbols: "(´▽`ʃ♡ƪ)" "ヾ(^▽^*)))" "ԅ(¯﹃¯ԅ)" "φ(゜▽゜*)♪" "_(:з)∠)_" "(*/ω＼*)" "(❁´◡`❁)" "Ψ(￣∀￣)Ψ" "～(∠・ω< )⌒☆";
+}
+.markdown {
+  display: flex;
+  flex-direction: column;
+  font-size: 1rem;
+  line-height: 1.6;
+  font-family: "LXGW Bright";
+}
+.markdown p {
+  margin: 0.5em 0;
+}
+.markdown h1 {
+  position: relative;
+  font-size: 2em;
+  margin: 1rem 0 0;
+  font-family: "LXGW Bright", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+}
+.markdown h1:target {
+  scroll-margin-top: 4rem;
+}
+.markdown h1 a.zola-anchor {
+  transition: all 0.2s ease-in-out;
+  text-decoration-color: transparent;
+}
+.markdown h1 a.zola-anchor::before {
+  padding-right: 0.25em;
+  content: "<";
+}
+.markdown h1 a.zola-anchor::after {
+  padding-left: 0.3em;
+  content: "/>";
+}
+.markdown h1 a.zola-anchor::before, .markdown h1 a.zola-anchor::after {
+  display: inline-block;
+  transition: all 0.2s;
+  font-size: 0.8em;
+  color: var(--accent-color-light);
+}
+.markdown h1 a.zola-anchor:hover {
+  text-decoration: var(--accent-color) underline;
+}
+.markdown h1 a.zola-anchor:hover::before, .markdown h1 a.zola-anchor:hover::after {
+  transform: scale(1.2);
+  color: var(--accent-color);
+}
+.markdown h2 {
+  position: relative;
+  font-size: 1.8em;
+  margin: 1em 0 0.64em 0;
+  font-family: "LXGW Bright", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+}
+.markdown h2:target {
+  scroll-margin-top: 4rem;
+}
+.markdown h2 a.zola-anchor {
+  transition: all 0.2s ease-in-out;
+  text-decoration-color: transparent;
+}
+.markdown h2 a.zola-anchor::before {
+  padding-right: 0.25em;
+  content: "##";
+}
+.markdown h2 a.zola-anchor::after {
+  padding-left: 0.3em;
+  content: "";
+}
+.markdown h2 a.zola-anchor::before, .markdown h2 a.zola-anchor::after {
+  display: inline-block;
+  transition: all 0.2s;
+  font-size: 0.8em;
+  color: var(--accent-color-light);
+}
+.markdown h2 a.zola-anchor:hover {
+  text-decoration: var(--accent-color) underline;
+}
+.markdown h2 a.zola-anchor:hover::before, .markdown h2 a.zola-anchor:hover::after {
+  transform: scale(1.2);
+  color: var(--accent-color);
+}
+.markdown h3 {
+  position: relative;
+  font-size: 1.5em;
+  margin: 0.5em 0 0.8em 0;
+  font-family: "LXGW Bright", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+}
+.markdown h3:target {
+  scroll-margin-top: 4rem;
+}
+.markdown h3 a.zola-anchor {
+  transition: all 0.2s ease-in-out;
+  text-decoration-color: transparent;
+}
+.markdown h3 a.zola-anchor::before {
+  padding-right: 0.25em;
+  content: "###";
+}
+.markdown h3 a.zola-anchor::after {
+  padding-left: 0.3em;
+  content: "";
+}
+.markdown h3 a.zola-anchor::before, .markdown h3 a.zola-anchor::after {
+  display: inline-block;
+  transition: all 0.2s;
+  font-size: 0.8em;
+  color: var(--accent-color-light);
+}
+.markdown h3 a.zola-anchor:hover {
+  text-decoration: var(--accent-color) underline;
+}
+.markdown h3 a.zola-anchor:hover::before, .markdown h3 a.zola-anchor:hover::after {
+  transform: scale(1.2);
+  color: var(--accent-color);
+}
+.markdown h4 {
+  position: relative;
+  font-size: 1.25em;
+  margin: 1em 0 0;
+  font-family: "LXGW Bright", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+}
+.markdown h4:target {
+  scroll-margin-top: 4rem;
+}
+.markdown h4 a.zola-anchor {
+  transition: all 0.2s ease-in-out;
+  text-decoration-color: transparent;
+}
+.markdown h4 a.zola-anchor::before {
+  padding-right: 0.25em;
+  content: "####";
+}
+.markdown h4 a.zola-anchor::after {
+  padding-left: 0.3em;
+  content: "";
+}
+.markdown h4 a.zola-anchor::before, .markdown h4 a.zola-anchor::after {
+  display: inline-block;
+  transition: all 0.2s;
+  font-size: 0.8em;
+  color: var(--accent-color-light);
+}
+.markdown h4 a.zola-anchor:hover {
+  text-decoration: var(--accent-color) underline;
+}
+.markdown h4 a.zola-anchor:hover::before, .markdown h4 a.zola-anchor:hover::after {
+  transform: scale(1.2);
+  color: var(--accent-color);
+}
+.markdown h1 {
+  text-align: center;
+}
+.markdown h2::after {
+  z-index: -1;
+  position: absolute;
+  left: 0;
+  top: 50%;
+  content: "--------------------------------------------------";
+  letter-spacing: 8px;
+  color: var(--accent-color-light);
+  max-width: 100%;
+  font-size: 0.8em;
+  text-wrap: nowrap;
+  overflow-x: hidden;
+}
+.markdown hr {
+  position: relative;
+  border-bottom: 1px solid #cccccc;
+  opacity: 66%;
+  counter-increment: hr;
+  overflow: visible;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 1.5em;
+}
+.markdown hr::after {
+  background-color: var(--background-color);
+  content: counter(hr, emoticon);
+  line-height: 20px;
+  text-align: center;
+  padding: 0 4px;
+  letter-spacing: 0.1rem;
+}
+.markdown a {
+  color: var(--link-color);
+  text-decoration: underline;
+  transition: color 0.2s ease-in-out;
+}
+.markdown a:hover {
+  color: var(--link-hover-color);
+}
+.markdown ul,
+.markdown ol {
+  margin: 0.5em 0;
+  padding-left: 2em;
+}
+.markdown ul {
+  list-style-type: disc;
+}
+.markdown ul ul {
+  list-style-type: circle;
+}
+.markdown ul ul ul {
+  list-style-type: square;
+}
+.markdown ol {
+  list-style-type: decimal;
+}
+.markdown ol ol {
+  list-style-type: lower-alpha;
+}
+.markdown ol ol ol {
+  list-style-type: lower-roman;
+}
+.markdown li {
+  margin: 0.25em 0;
+  line-height: 1.8;
+}
+.markdown li::marker {
+  color: var(--list-marker-color);
+}
+.markdown blockquote {
+  margin: 1em 0;
+  padding: 0.75em 1em 0.75em 1.5em;
+  border-left: 4px solid var(--blockquote-border);
+  background-color: var(--blockquote-bg);
+  font-style: italic;
+  color: var(--blockquote-text);
+}
+.markdown blockquote p:first-child {
+  margin-top: 0;
+}
+.markdown blockquote p:last-child {
+  margin-bottom: 0;
+}
+.markdown blockquote cite {
+  display: block;
+  margin-top: 0.5em;
+  font-size: 0.9em;
+  text-align: right;
+  font-style: normal;
+}
+.markdown blockquote cite::before {
+  content: "— ";
+}
+.markdown code {
+  font-family: "JetBrainsMono Nerd Font Mono", Consolas, monospace;
+  font-size: 0.9em;
+  padding: 0.2em 0.4em;
+  background-color: var(--code-bg);
+  border-radius: 0.25rem;
+  color: var(--code-text);
+  border: 1px solid var(--code-border);
+}
+.markdown pre {
+  font-size: 90%;
+  padding: 1em;
+  margin: 1em 0;
+  overflow-x: auto;
+  border-radius: 0.5rem;
+  background-color: var(--pre-bg);
+  border: 1px solid var(--pre-border);
+  box-shadow: 0 2px 8px var(--pre-shadow);
+  position: relative;
+}
+.markdown pre::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent-color), var(--accent-color-light));
+  border-radius: 0.5rem 0.5rem 0 0;
+}
+.markdown pre code {
+  background-color: transparent;
+  padding: 0;
+  color: var(--pre-code-text);
+  font-size: 1em;
+  border: none;
+}
+.markdown img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  margin: 1em 0;
+  display: block;
+}
+.markdown figure {
+  margin: 1.5em 0;
+  text-align: center;
+}
+.markdown figure img {
+  margin: 0 auto;
+}
+.markdown figure figcaption {
+  margin-top: 0.5em;
+  font-size: 0.9em;
+  color: var(--figcaption-text);
+  font-style: italic;
+}
+.markdown table {
+  width: 100%;
+  margin: 1em 0;
+  border-collapse: collapse;
+  overflow-x: auto;
+  display: block;
+}
+.markdown table thead {
+  background-color: var(--table-header-bg);
+}
+.markdown table th,
+.markdown table td {
+  padding: 0.75em 1em;
+  text-align: left;
+  border: 1px solid var(--table-border);
+}
+.markdown table th {
+  font-weight: 600;
+  color: var(--table-header-text);
+}
+.markdown table tbody tr:nth-child(even) {
+  background-color: var(--table-row-even);
+}
+.markdown table tbody tr:hover {
+  background-color: var(--table-row-hover);
+}
+@media (max-width: 768px) {
+  .markdown {
+    font-size: 0.95rem;
+  }
+  .markdown h1 {
+    font-size: 1.75em;
+  }
+  .markdown h2 {
+    font-size: 1.5em;
+  }
+  .markdown h3 {
+    font-size: 1.25em;
+  }
+  .markdown h4 {
+    font-size: 1.1em;
+  }
+  .markdown ul,
+  .markdown ol {
+    padding-left: 1.5em;
+  }
+  .markdown blockquote {
+    padding: 0.5em 0.75em 0.5em 1em;
+    border-left-width: 3px;
+  }
+  .markdown pre {
+    padding: 0.75em;
+    font-size: 85%;
+  }
+  .markdown table {
+    font-size: 0.9em;
+  }
+  .markdown table th,
+  .markdown table td {
+    padding: 0.5em 0.75em;
+  }
+}
+@media (max-width: 480px) {
+  .markdown {
+    font-size: 0.9rem;
+  }
+  .markdown h1 {
+    font-size: 1.5em;
+  }
+  .markdown h2 {
+    font-size: 1.35em;
+  }
+  .markdown h2::after {
+    letter-spacing: 4px;
+  }
+  .markdown h3 {
+    font-size: 1.15em;
+  }
+  .markdown h4 {
+    font-size: 1.05em;
+  }
+}
+
+.lxgw {
+  font-family: "LXGW Bright", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+}
+
+#main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/*# sourceMappingURL=main.css.map */

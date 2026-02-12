@@ -1,7 +1,12 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use regex::Regex;
+use relative_path::PathExt;
 use time::UtcDateTime;
+#[allow(unused)]
+use tracing::{debug, warn};
+
+use crate::{Id, Ids};
 
 pub fn patch_file(
     path: impl AsRef<Path>,
@@ -16,7 +21,7 @@ pub fn patch_file(
     if let Some(old_inject) = old_inject.as_deref()
         && old_inject.trim() != inject.trim()
     {
-        println!("cargo:warning=patching file {path:?}");
+        tracing::warn!("patching file {path:?}");
         std::fs::write(path, res)?;
     }
     Ok(())
@@ -68,6 +73,85 @@ pub fn get_ref_paths(html: &str) -> Vec<String> {
         .map(|cap| cap.get(1).unwrap().as_str().to_string())
         .filter(|s| !s.starts_with("data:"))
         .collect()
+}
+
+pub fn rewrite_html_links(
+    article: &mut crate::Article,
+    vault_root: &Path,
+    articles_url: &str,
+) -> Vec<(PathBuf, Ids)> {
+    let mut assets = Vec::new();
+    // Match src="..." and href="..."
+    // We use a simple regex that captures the attribute name and the value
+    let re = Regex::new(r#"(src|href)="([^"]+)""#).unwrap();
+
+    let new_html = re
+        .replace_all(&article.content_html, |caps: &regex::Captures| {
+            let attr = &caps[1];
+            let val = &caps[2];
+
+            // println!("cargo::warning={}", format!("find url {}", val));
+            // Check if it is a relative path (not starting with http, /, mailto, data, #)
+            if val.starts_with("http")
+                || val.starts_with('/')
+                || val.starts_with("mailto:")
+                || val.starts_with("data:")
+                || val.starts_with('#')
+            {
+                return format!(r#"{}="{}""#, attr, val);
+            }
+            let article_path = article.entity_path.rel_path.to_path(vault_root);
+            let article_dir = article_path.parent().unwrap();
+
+            // debug!(
+            //     "val: {val:?} -> {:?} ({:?})",
+            //     percent_encoding::percent_decode_str(val).decode_utf8_lossy(),
+            //     percent_encoding::percent_decode_str(val).decode_utf8()
+            // );
+            let val_decoded = percent_encoding::percent_decode_str(val)
+                .decode_utf8()
+                .unwrap_or(std::borrow::Cow::Borrowed(val));
+
+            // Calculate absolute path of the asset
+            let abs_asset_path = article_dir.join(val_decoded.as_ref());
+            // debug!("Asset {val} at {article_dir:?}: {abs_asset_path:?}");
+            if !abs_asset_path.exists() || abs_asset_path.is_dir() {
+                warn!(
+                    r#"Asset url "{val}" not found relative to "{}": {}"#,
+                    article
+                        .entity_path
+                        .rel_path
+                        .to_string()
+                        .replace(" ", r#"\ "#),
+                    abs_asset_path.to_string_lossy(),
+                );
+                return format!(r#"{}="{}""#, attr, val);
+            }
+
+            // Calculate relative path from vault root
+            if let Ok(path_in_vault) = abs_asset_path.relative_to(vault_root) {
+                // println!("cargo::warning=REPLACING");
+                let mut ids = Ids::from(path_in_vault.parent().unwrap().as_str());
+                ids.push(Id::new(path_in_vault.file_stem().unwrap()));
+
+                let url = if let Some(ext) = path_in_vault.extension() {
+                    format!("{ids}.{ext}")
+                } else {
+                    format!("{ids}.jpg")
+                };
+
+                let new_url = format!("{}/{}", articles_url.trim_end_matches('/'), url);
+
+                assets.push((abs_asset_path, ids));
+                return format!(r#"{}="{}""#, attr, new_url);
+            } else {
+                format!(r#"{}="{}""#, attr, val)
+            }
+        })
+        .to_string();
+
+    article.content_html = new_html;
+    assets
 }
 
 pub fn get_tag_content(html: &str, tag: &str) -> Option<String> {
@@ -205,7 +289,113 @@ fn parse_git_ts(output: std::io::Result<std::process::Output>) -> i64 {
     }
 }
 
+use std::collections::HashMap;
+use std::sync::OnceLock;
+
+pub struct GitCache {
+    root: PathBuf,
+    created: HashMap<String, i64>,
+    updated: HashMap<String, i64>,
+}
+
+static GIT_CACHE: OnceLock<GitCache> = OnceLock::new();
+
+pub fn get_git_cache() -> &'static GitCache {
+    GIT_CACHE.get_or_init(|| {
+        tracing::info!("Loading git history for timestamp caching...");
+        let start = std::time::Instant::now();
+
+        let root = std::process::Command::new("git")
+            .arg("rev-parse")
+            .arg("--show-toplevel")
+            .output()
+            .ok()
+            .and_then(|out| String::from_utf8(out.stdout).ok())
+            .map(|s| PathBuf::from(s.trim()))
+            .unwrap_or_else(|| PathBuf::from("."))
+            .canonicalize()
+            .unwrap();
+
+        let mut created = HashMap::new();
+        let mut updated = HashMap::new();
+
+        let output = std::process::Command::new("git")
+            .arg("-c")
+            .arg("core.quotePath=false")
+            .arg("log")
+            .arg("--name-status")
+            .arg("--format=COMMIT %ct")
+            .output()
+            .ok();
+
+        if let Some(output) = output {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let mut current_ts = 0;
+            for line in stdout.lines() {
+                if line.starts_with("COMMIT ") {
+                    if let Ok(ts) = line["COMMIT ".len()..].parse::<i64>() {
+                        current_ts = ts;
+                    }
+                } else if !line.trim().is_empty() {
+                    let parts: Vec<&str> = line.split('\t').collect();
+                    if parts.len() >= 2 {
+                        let status = parts[0];
+                        let path_str = if status.starts_with('R') || status.starts_with('C') {
+                            if parts.len() >= 3 {
+                                parts[2]
+                            } else {
+                                continue;
+                            }
+                        } else {
+                            parts[1]
+                        };
+                        let path_str = path_str.trim_matches('"').to_string();
+
+                        updated.entry(path_str.clone()).or_insert(current_ts);
+
+                        if status.starts_with('A')
+                            || status.starts_with('R')
+                            || status.starts_with('C')
+                        {
+                            created.entry(path_str).or_insert(current_ts);
+                        }
+                    }
+                }
+            }
+        }
+
+        tracing::info!("Loaded git history in {:?}", start.elapsed());
+        GitCache {
+            root,
+            created,
+            updated,
+        }
+    })
+}
+
+fn normalize_path(path: &Path, root: &Path) -> Option<String> {
+    let rel = if path.is_absolute() {
+        path.strip_prefix(root).ok()?
+    } else {
+        path
+    };
+
+    Some(
+        rel.components()
+            .map(|c| c.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/"),
+    )
+}
+
 pub fn git_updated_ts(path: &Path) -> i64 {
+    let cache = get_git_cache();
+    if let Some(key) = normalize_path(path, &cache.root) {
+        if let Some(&ts) = cache.updated.get(&key) {
+            return ts;
+        }
+    }
+
     use std::process::Command;
     let output = Command::new("git")
         .arg("log")
@@ -221,6 +411,13 @@ pub fn git_updated_datetime(path: &Path) -> UtcDateTime {
 }
 
 pub fn git_created_ts(path: &Path) -> i64 {
+    let cache = get_git_cache();
+    if let Some(key) = normalize_path(path, &cache.root) {
+        if let Some(&ts) = cache.created.get(&key) {
+            return ts;
+        }
+    }
+
     use std::process::Command;
     let output = Command::new("git")
         .arg("log")

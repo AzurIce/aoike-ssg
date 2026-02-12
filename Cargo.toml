@@ -5,40 +5,42 @@ authors = ["AzurIce <973562770@qq.com>"]
 edition = "2024"
 
 [workspace]
-members = ["example/*", "packages/*"]
+members = ["examples/leptos", "packages/aoike-leptos", "packages/aoike-obsidian"]
 
 [workspace.dependencies]
-aoike = { path = "." }
-aoike-dioxus = { path = "packages/aoike-dioxus" }
-aoike-sycamore = { path = "packages/aoike-sycamore" }
+aoike = { path = ".", default-features = false }
+aoike-leptos = { path = "packages/aoike-leptos" }
 
 [features]
-default = []
+default = ["build"]
 build = [
-    "dep:quote",
-    "dep:proc-macro2",
-    "dep:prettyplease",
-    "dep:syn",
     "dep:walkdir",
     "dep:pulldown-cmark",
-    "dep:slug",
     "dep:regex",
-    "dep:relative-path",
+    "dep:indicatif",
+    "dep:tracing-indicatif",
+    "dep:tracing-subscriber",
+    "dep:ignore",
+    "dep:rayon",
+    "dep:percent-encoding",
 ]
 
 [dependencies]
-time = { version = "0.3.43", features = ["wasm-bindgen"] }
+time = { version = "0.3.43", features = ["wasm-bindgen", "serde"] }
 anyhow = "1.0.100"
+slug = "0.1.6"
+tracing = "0.1"
 
-quote = { version = "1.0.40", optional = true }
-proc-macro2 = { version = "1.0.101", optional = true }
-prettyplease = { version = "0.2.23", optional = true }
-syn = { version = "2.0", features = ["full"], optional = true }
 walkdir = { version = "2.5.0", optional = true }
 pulldown-cmark = { version = "0.13.0", optional = true }
-slug = { version = "0.1.6", optional = true }
 regex = { version = "1.11.3", optional = true }
-relative-path = { version = "2.0.1", optional = true }
-
-[build-dependencies]
-rsass = "0.29.2"
+indicatif = { version = "0.18", optional = true }
+tracing-indicatif = { version = "0.3", optional = true }
+tracing-subscriber = { version = "0.3", optional = true, features = ["env-filter"] }
+ignore = { version = "0.4", optional = true }
+rayon = { version = "1.11.0", optional = true }
+percent-encoding = { version = "2.3", optional = true }
+relative-path = { version = "2.0.1", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.147"
+clap = { version = "4.5", features = ["derive"] }
