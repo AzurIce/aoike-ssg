@@ -404,19 +404,27 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
     let sentinel_ref = create_node_ref();
 
     on_mount(move || {
+        web_sys::console::log_1(&"[gallery] on_mount".into());
         if let Some(sentinel) = sentinel_ref
             .try_get()
             .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
         {
+            web_sys::console::log_1(&format!("[gallery] sentinel found, total_items={}, visible_count={}", total_items, visible_count.get()).into());
             let visible_count = visible_count;
             let closure = wasm_bindgen::closure::Closure::wrap(Box::new(
                 move |entries: js_sys::Array| {
+                    web_sys::console::log_1(&format!("[gallery] observer callback fired, entries={}", entries.length()).into());
                     if let Some(entry) = entries
                         .get(0)
                         .dyn_ref::<web_sys::IntersectionObserverEntry>()
                     {
+                        web_sys::console::log_1(&format!("[gallery] entry is_intersecting={}", entry.is_intersecting()).into());
                         if entry.is_intersecting() {
-                            visible_count.update(|c| *c = (*c + batch_size).min(total_items));
+                            visible_count.update(|c| {
+                                let new = (*c + batch_size).min(total_items);
+                                web_sys::console::log_1(&format!("[gallery] loading more: {} -> {}", c, new).into());
+                                *c = new
+                            });
                         }
                     }
                 },
@@ -428,9 +436,14 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
                 &web_sys::IntersectionObserverInit::new(),
             );
             if let Ok(observer) = observer {
+                web_sys::console::log_1(&"[gallery] observer created, observing sentinel".into());
                 observer.observe(&sentinel);
                 closure.forget();
+            } else {
+                web_sys::console::log_1(&"[gallery] failed to create observer".into());
             }
+        } else {
+            web_sys::console::log_1(&"[gallery] sentinel not found".into());
         }
     });
 
