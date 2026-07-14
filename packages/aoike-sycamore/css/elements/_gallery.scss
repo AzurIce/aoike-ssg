@@ -150,6 +150,11 @@
   font-size: 0.9rem;
   line-height: 1.6;
 
+  &.markdown {
+    max-width: none;
+    margin-inline: 0;
+  }
+
   > *:first-child {
     margin-top: 0;
   }
