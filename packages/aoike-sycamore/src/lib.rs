@@ -3,8 +3,6 @@ pub mod build;
 
 pub mod docsgen;
 
-use std::rc::Rc;
-
 use aoike::{GalleryCategory, GalleryImage, PostData};
 use sycamore::prelude::*;
 use sycamore_router::{navigate, HistoryIntegration, Route, Router};
@@ -63,7 +61,7 @@ pub fn AoikeApp(
                 view! {
                     Header()
 
-                    main(class="max-w-[80ch] w-full m-x-auto flex flex-col items-center p-8 gap-4") {
+                    main(class="max-w-[120ch] w-full m-x-auto flex flex-col items-center p-8 gap-4") {
                         (match route.get_clone() {
                             AppRoutes::Index => view! {
                                 Index(index=index, posts=posts)
@@ -278,25 +276,49 @@ pub fn NotFound() -> View {
     }
 }
 
+fn format_date(date: Option<aoike::time::Date>) -> String {
+    match date {
+        Some(d) => format!("{}年{}月{}日", d.year(), u8::from(d.month()), d.day()),
+        None => "未知日期".to_string(),
+    }
+}
+
 #[component(inline_props)]
 pub fn GalleryPage(categories: &'static [GalleryCategory]) -> View {
+    let selected = create_signal(0usize);
+
     view! {
-        div(class="w-full flex flex-col gap-8") {
-            h1 { "Gallery" }
+        div(class="gallery-page") {
+            h1(class="gallery-page-title") { "Gallery" }
             (if categories.is_empty() {
                 view! {
-                    p(class="text-gray-500") { "还没有图片哦~" }
+                    p(class="gallery-empty") { "还没有图片哦~" }
                 }
             } else {
                 view! {
-                    (categories
-                        .iter()
-                        .map(|category| {
+                    div(class="gallery-tabs") {
+                        (categories.iter().enumerate().map(|(idx, category)| {
                             view! {
-                                GalleryCategory(category=category)
+                                button(
+                                    class=move || format!("gallery-tab {}", if selected.get() == idx { "active" } else { "" }),
+                                    on:click=move |_| selected.set(idx)
+                                ) {
+                                    (category.name.clone())
+                                    span(class="gallery-tab-count") { (format!("{}", category.images.len())) }
+                                }
                             }
-                        })
-                        .collect::<Vec<_>>())
+                        }).collect::<Vec<_>>())
+                    }
+                    (move || {
+                        let idx = selected.get();
+                        if let Some(category) = categories.get(idx) {
+                            view! {
+                                GalleryCategoryTimeline(category=category)
+                            }
+                        } else {
+                            view! {}
+                        }
+                    })
                 }
             })
         }
@@ -304,24 +326,31 @@ pub fn GalleryPage(categories: &'static [GalleryCategory]) -> View {
 }
 
 #[component(inline_props)]
-pub fn GalleryCategory(category: &'static GalleryCategory) -> View {
+pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
     let images = category.images.as_slice();
     let show = create_signal(false);
     let current_index = create_signal(0usize);
 
-    let on_open: Rc<dyn Fn(usize)> = Rc::new(move |idx: usize| {
-        current_index.set(idx);
-        show.set(true);
-    });
-
     view! {
-        section(class="w-full flex flex-col gap-4") {
-            h2(class="text-xl lxgw") { (category.name.clone()) }
-            div(class="gallery-grid") {
-                (images.iter().enumerate().map(|(idx, image)| {
-                    let on_open = Rc::clone(&on_open);
+        section(class="gallery-category") {
+            div(class="gallery-timeline") {
+                (category.date_groups.iter().map(|(date, indices)| {
                     view! {
-                        GalleryCard(image=image, index=idx, on_open=on_open)
+                        div(class="gallery-date-group") {
+                            h2(class="gallery-date-heading lxgw") { (format_date(*date)) }
+                            div(class="gallery-masonry") {
+                                (indices.iter().map(|&idx| {
+                                    view! {
+                                        GalleryCard(
+                                            image=&category.images[idx],
+                                            index=idx,
+                                            show=show,
+                                            current_index=current_index,
+                                        )
+                                    }
+                                }).collect::<Vec<_>>())
+                            }
+                        }
                     }
                 }).collect::<Vec<_>>())
             }
@@ -346,7 +375,8 @@ pub fn GalleryCategory(category: &'static GalleryCategory) -> View {
 pub fn GalleryCard(
     image: &'static GalleryImage,
     index: usize,
-    on_open: Rc<dyn Fn(usize)>,
+    show: Signal<bool>,
+    current_index: Signal<usize>,
 ) -> View {
     let aspect_style = if image.width > 0 && image.height > 0 {
         format!("aspect-ratio: {}/{}", image.width, image.height)
@@ -358,7 +388,10 @@ pub fn GalleryCard(
         div(
             class="gallery-card",
             style=aspect_style,
-            on:click=move |_| on_open(index)
+            on:click=move |_| {
+                current_index.set(index);
+                show.set(true);
+            }
         ) {
             img(
                 class="gallery-thumb",

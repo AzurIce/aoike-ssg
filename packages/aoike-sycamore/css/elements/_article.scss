@@ -6,6 +6,8 @@
 .markdown {
   display: flex;
   flex-direction: column;
+  max-width: 80ch;
+  margin-inline: auto;
   font-size: 1rem;
   line-height: 1.6;
   font-family: 'LXGW Bright';

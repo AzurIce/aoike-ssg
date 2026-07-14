@@ -2,7 +2,7 @@
 pub mod build;
 
 pub use time;
-use time::UtcDateTime;
+use time::{Date, UtcDateTime};
 
 #[derive(Clone, PartialEq)]
 pub struct PostData {
@@ -36,4 +36,5 @@ pub struct GalleryCategory {
     pub name: String,
     pub slug: String,
     pub images: Vec<GalleryImage>,
+    pub date_groups: Vec<(Option<Date>, Vec<usize>)>,
 }

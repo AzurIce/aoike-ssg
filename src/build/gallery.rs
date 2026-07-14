@@ -4,7 +4,7 @@ use anyhow::Context;
 use exif::{Exif, In, Reader, Tag, Value};
 use walkdir::WalkDir;
 
-use crate::{GalleryCategory, GalleryImage};
+use crate::{time::Date, GalleryCategory, GalleryImage};
 
 const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif"];
 
@@ -38,15 +38,48 @@ pub fn parse_gallery(dir: impl AsRef<Path>) -> Vec<GalleryCategory> {
 
         images.sort_by(|a, b| b.created.cmp(&a.created));
 
+        let date_groups = group_images_by_date(&images);
+
         categories.push(GalleryCategory {
             name,
             slug,
             images,
+            date_groups,
         });
     }
 
     categories.sort_by(|a, b| a.name.cmp(&b.name));
     categories
+}
+
+fn group_images_by_date(images: &[GalleryImage]) -> Vec<(Option<Date>, Vec<usize>)> {
+    use std::collections::BTreeMap;
+
+    let mut known: BTreeMap<Date, Vec<usize>> = BTreeMap::new();
+    let mut unknown: Vec<usize> = Vec::new();
+
+    for (idx, image) in images.iter().enumerate() {
+        match image.created {
+            Some(dt) => known.entry(dt.date()).or_default().push(idx),
+            None => unknown.push(idx),
+        }
+    }
+
+    for indices in known.values_mut() {
+        indices.sort_by(|&a, &b| images[b].created.cmp(&images[a].created));
+    }
+
+    let mut result: Vec<_> = known
+        .into_iter()
+        .map(|(date, indices)| (Some(date), indices))
+        .collect();
+    result.sort_by(|a, b| b.0.cmp(&a.0));
+
+    if !unknown.is_empty() {
+        result.push((None, unknown));
+    }
+
+    result
 }
 
 fn is_image(path: &Path) -> bool {
@@ -73,6 +106,7 @@ fn parse_image(path: &Path, _gallery_dir: &Path, category_slug: &str) -> Option<
     let (width, height) = exif
         .as_ref()
         .and_then(image_dimensions_from_exif)
+        .or_else(|| imagesize::size(path).ok().map(|s| (s.width as u32, s.height as u32)))
         .unwrap_or((0, 0));
 
     let title = exif
@@ -89,7 +123,9 @@ fn parse_image(path: &Path, _gallery_dir: &Path, category_slug: &str) -> Option<
     let created = exif
         .as_ref()
         .and_then(|e| exif_datetime(e, Tag::DateTimeOriginal))
-        .or_else(|| exif.as_ref().and_then(|e| exif_datetime(e, Tag::DateTime)));
+        .or_else(|| exif.as_ref().and_then(|e| exif_datetime(e, Tag::DateTime)))
+        .or_else(|| datetime_from_filename(&file_name))
+        .or_else(|| file_created_datetime(path));
 
     Some(GalleryImage {
         src,
@@ -142,6 +178,51 @@ fn exif_datetime(exif: &Exif, tag: Tag) -> Option<crate::time::UtcDateTime> {
     parse_exif_datetime(&s)
 }
 
+fn datetime_from_filename(name: &str) -> Option<crate::time::UtcDateTime> {
+    // Try patterns like:
+    // ffxiv_20250820_205257_085.png -> 2025-08-20 20:52:57
+    // IMG_20231001_123456.jpg -> 2023-10-01 12:34:56
+    // Screenshot_2023-10-01_12-34-56.png
+    // 2023-10-01_12-34-56.png
+    let patterns = [
+        regex::Regex::new(r"(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})").unwrap(),
+        regex::Regex::new(r"(\d{4})-(\d{2})-(\d{2})[ _](\d{2})[-:]?(\d{2})[-:]?(\d{2})").unwrap(),
+    ];
+
+    for pattern in &patterns {
+        if let Some(caps) = pattern.captures(name) {
+            let year: i32 = caps.get(1)?.as_str().parse().ok()?;
+            let month: u8 = caps.get(2)?.as_str().parse().ok()?;
+            let day: u8 = caps.get(3)?.as_str().parse().ok()?;
+            let hour: u8 = caps.get(4)?.as_str().parse().ok()?;
+            let minute: u8 = caps.get(5)?.as_str().parse().ok()?;
+            let second: u8 = caps.get(6)?.as_str().parse().ok()?;
+            return build_datetime(year, month, day, hour, minute, second);
+        }
+    }
+    None
+}
+
+fn file_created_datetime(path: &Path) -> Option<crate::time::UtcDateTime> {
+    let metadata = std::fs::metadata(path).ok()?;
+    let created = metadata.created().ok()?;
+    let duration = created.duration_since(std::time::UNIX_EPOCH).ok()?;
+    crate::time::UtcDateTime::from_unix_timestamp(duration.as_secs() as i64).ok()
+}
+
+fn build_datetime(
+    year: i32,
+    month: u8,
+    day: u8,
+    hour: u8,
+    minute: u8,
+    second: u8,
+) -> Option<crate::time::UtcDateTime> {
+    let date = crate::time::Date::from_calendar_date(year, month.try_into().ok()?, day).ok()?;
+    let time = crate::time::Time::from_hms(hour, minute, second).ok()?;
+    Some(crate::time::UtcDateTime::new(date, time))
+}
+
 fn parse_exif_datetime(s: &str) -> Option<crate::time::UtcDateTime> {
     // EXIF DateTime format: "2023:10:01 12:34:56"
     let parts: Vec<&str> = s.split_whitespace().collect();
@@ -161,9 +242,7 @@ fn parse_exif_datetime(s: &str) -> Option<crate::time::UtcDateTime> {
     let minute: u8 = time_parts[1].parse().ok()?;
     let second: u8 = time_parts[2].parse().ok()?;
 
-    let date = crate::time::Date::from_calendar_date(year, month.try_into().ok()?, day).ok()?;
-    let time = crate::time::Time::from_hms(hour, minute, second).ok()?;
-    Some(crate::time::UtcDateTime::new(date, time))
+    build_datetime(year, month, day, hour, minute, second)
 }
 
 impl quote::ToTokens for GalleryImage {
@@ -217,18 +296,47 @@ impl quote::ToTokens for GalleryImage {
     }
 }
 
+fn date_tokens(date: Option<&Date>) -> proc_macro2::TokenStream {
+    match date {
+        Some(d) => {
+            let year = d.year();
+            let month = u8::from(d.month());
+            let day = d.day();
+            quote::quote! {
+                Some(aoike::time::Date::from_calendar_date(
+                    #year,
+                    aoike::time::Month::try_from(#month).unwrap(),
+                    #day,
+                ).unwrap())
+            }
+        }
+        None => quote::quote! { None },
+    }
+}
+
 impl quote::ToTokens for GalleryCategory {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let Self {
             name,
             slug,
             images,
+            date_groups,
         } = self;
+
+        let group_tokens: Vec<_> = date_groups
+            .iter()
+            .map(|(date, indices)| {
+                let date_tok = date_tokens(date.as_ref());
+                quote::quote! { (#date_tok, vec![#(#indices),*]) }
+            })
+            .collect();
+
         tokens.extend(quote::quote! {
             aoike::GalleryCategory {
                 name: #name.to_string(),
                 slug: #slug.to_string(),
                 images: vec![#(#images),*],
+                date_groups: vec![#(#group_tokens),*],
             }
         });
     }

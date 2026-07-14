@@ -501,6 +501,7 @@ input:where([type='button'], [type='reset'], [type='submit']),
 .h2{height:calc(var(--spacing) * 2);}
 .max-h-0{max-height:calc(var(--spacing) * 0);}
 .max-w-\[80ch\]{max-width:80ch;}
+.max-w-\[120ch\]{max-width:120ch;}
 .max-w-5xl{max-width:var(--container-5xl);}
 .w-full{width:100%;}
 .group:hover .group-hover\:max-h-8{max-height:calc(var(--spacing) * 8);}
