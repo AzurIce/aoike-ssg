@@ -62,7 +62,13 @@ pub fn AoikeApp(
                 view! {
                     Header()
 
-                    main(class="max-w-[120ch] w-full m-x-auto flex flex-col items-center p-8 gap-4") {
+                    main(class=move || {
+                        let is_gallery = matches!(route.get_clone(), AppRoutes::Gallery);
+                        format!(
+                            "w-full m-x-auto flex flex-col items-center p-8 gap-4 {}",
+                            if is_gallery { "gallery-main" } else { "max-w-[120ch]" }
+                        )
+                    }) {
                         (match route.get_clone() {
                             AppRoutes::Index => view! {
                                 Index(index=index, posts=posts)
@@ -336,40 +342,63 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
     let show = create_signal(false);
     let current_index = create_signal(0usize);
 
-    // Build a flat list of all images in timeline order for the lightbox, along with the
-    // per-timeline-item flat index ranges needed for rendering.
+    // Pre-compute a static render description for each timeline date group.
+    // Each entry contains the date, flat indices for loose images, and for each folder group
+    // the group index plus the flat indices of its images.
+    struct RenderGroup {
+        group_idx: usize,
+        indices: &'static [usize],
+    }
+
+    struct RenderDateGroup {
+        date: Option<aoike::time::Date>,
+        loose_indices: &'static [usize],
+        groups: &'static [RenderGroup],
+    }
+
     let mut all_images: Vec<&'static GalleryImage> = Vec::new();
-    let mut render_items: Vec<(&'static GalleryTimelineItem, Vec<usize>)> = Vec::new();
+    let mut render_items: Vec<RenderDateGroup> = Vec::new();
 
     for item in &category.timeline {
-        let start = all_images.len();
         match item {
-            GalleryTimelineItem::DateGroup { image_indices, .. } => {
-                for &idx in image_indices {
+            GalleryTimelineItem::DateGroup {
+                date,
+                loose_image_indices,
+                folder_group_indices,
+            } => {
+                let loose_start = all_images.len();
+                for &idx in loose_image_indices {
                     all_images.push(&category.loose_images[idx]);
                 }
-            }
-            GalleryTimelineItem::FolderGroup { group_idx } => {
-                for img in &category.groups[*group_idx].images {
-                    all_images.push(img);
+                let loose_indices: &'static [usize] =
+                    Box::leak((loose_start..all_images.len()).collect::<Vec<_>>().into_boxed_slice());
+
+                let mut groups = Vec::new();
+                for &group_idx in folder_group_indices {
+                    let group_start = all_images.len();
+                    for img in &category.groups[group_idx].images {
+                        all_images.push(img);
+                    }
+                    let indices: &'static [usize] =
+                        Box::leak((group_start..all_images.len()).collect::<Vec<_>>().into_boxed_slice());
+                    groups.push(RenderGroup { group_idx, indices });
                 }
+                let groups: &'static [RenderGroup] = Box::leak(groups.into_boxed_slice());
+
+                render_items.push(RenderDateGroup {
+                    date: *date,
+                    loose_indices,
+                    groups,
+                });
             }
         }
-        let flat_indices: Vec<usize> = (start..all_images.len()).collect();
-        render_items.push((item, flat_indices));
     }
 
     let all_images: &'static [&'static GalleryImage] = Box::leak(all_images.into_boxed_slice());
-    let render_items: &'static [(&'static GalleryTimelineItem, &'static [usize])] = Box::leak(
-        render_items
-            .into_iter()
-            .map(|(item, indices)| (item, Box::leak(indices.into_boxed_slice()) as &'static [usize]))
-            .collect::<Vec<_>>()
-            .into_boxed_slice(),
-    );
+    let render_items: &'static [RenderDateGroup] = Box::leak(render_items.into_boxed_slice());
     let total_items = render_items.len();
 
-    // Lazy loading state: how many timeline items are currently rendered.
+    // Lazy loading state: how many timeline date groups are currently rendered.
     let batch_size = 3usize;
     let visible_count = create_signal(batch_size.min(total_items));
     let sentinel_ref = create_node_ref();
@@ -408,52 +437,56 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
     view! {
         section(class="gallery-category") {
             div(class="gallery-timeline") {
-                (render_items.iter().take(visible_count.get()).map(|(item, flat_indices)| {
-                    match item {
-                        GalleryTimelineItem::DateGroup { date, .. } => {
-                            view! {
-                                div(class="gallery-date-group") {
-                                    h2(class="gallery-date-heading lxgw") { (format_date(*date)) }
-                                    div(class="gallery-masonry") {
-                                        (flat_indices.iter().map(|&flat_idx| {
-                                            view! {
-                                                GalleryCard(
-                                                    image=all_images[flat_idx],
-                                                    flat_index=flat_idx,
-                                                    show=show,
-                                                    current_index=current_index,
-                                                )
-                                            }
-                                        }).collect::<Vec<_>>())
+                (render_items.iter().take(visible_count.get()).map(|item| {
+                    view! {
+                        div(class="gallery-date-group") {
+                            h2(class="gallery-date-heading lxgw") { (format_date(item.date)) }
+                            div(class="gallery-date-content") {
+                                (if !item.loose_indices.is_empty() {
+                                    view! {
+                                        div(class="gallery-masonry") {
+                                            (item.loose_indices.iter().map(|&flat_idx| {
+                                                view! {
+                                                    GalleryCard(
+                                                        image=all_images[flat_idx],
+                                                        flat_index=flat_idx,
+                                                        show=show,
+                                                        current_index=current_index,
+                                                    )
+                                                }
+                                            }).collect::<Vec<_>>())
+                                        }
                                     }
-                                }
-                            }
-                        }
-                        GalleryTimelineItem::FolderGroup { group_idx } => {
-                            let group = &category.groups[*group_idx];
-                            view! {
-                                div(class="gallery-folder-group") {
-                                    div(class="gallery-folder-header") {
-                                        h2(class="gallery-folder-heading lxgw") { (group.name.clone()) }
-                                        (group.description_html.clone().map(|html| {
-                                            view! {
-                                                div(class="gallery-folder-desc markdown", dangerously_set_inner_html=html)
+                                } else {
+                                    view! {}
+                                })
+                                (item.groups.iter().map(|group| {
+                                    let gallery_group = &category.groups[group.group_idx];
+                                    view! {
+                                        div(class="gallery-folder-group") {
+                                            div(class="gallery-folder-header") {
+                                                h3(class="gallery-folder-heading lxgw") { (gallery_group.name.clone()) }
+                                                (gallery_group.description_html.clone().map(|html| {
+                                                    view! {
+                                                        div(class="gallery-folder-desc markdown", dangerously_set_inner_html=html)
+                                                    }
+                                                }))
                                             }
-                                        }))
-                                    }
-                                    div(class="gallery-masonry") {
-                                        (flat_indices.iter().map(|&flat_idx| {
-                                            view! {
-                                                GalleryCard(
-                                                    image=all_images[flat_idx],
-                                                    flat_index=flat_idx,
-                                                    show=show,
-                                                    current_index=current_index,
-                                                )
+                                            div(class="gallery-masonry") {
+                                                (group.indices.iter().map(|&flat_idx| {
+                                                    view! {
+                                                        GalleryCard(
+                                                            image=all_images[flat_idx],
+                                                            flat_index=flat_idx,
+                                                            show=show,
+                                                            current_index=current_index,
+                                                        )
+                                                    }
+                                                }).collect::<Vec<_>>())
                                             }
-                                        }).collect::<Vec<_>>())
+                                        }
                                     }
-                                }
+                                }).collect::<Vec<_>>())
                             }
                         }
                     }

@@ -41,8 +41,11 @@ pub struct GalleryGroup {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum GalleryTimelineItem {
-    DateGroup { date: Option<Date>, image_indices: Vec<usize> },
-    FolderGroup { group_idx: usize },
+    DateGroup {
+        date: Option<Date>,
+        loose_image_indices: Vec<usize>,
+        folder_group_indices: Vec<usize>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
