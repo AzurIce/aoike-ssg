@@ -575,22 +575,20 @@ pub fn GalleryLightbox(
     let close = move |_| show.set(false);
 
     let prev = move |_| {
+        web_sys::console::log_1(&"[gallery] prev clicked".into());
         current_index.update(|i| {
-            if *i == 0 {
-                images.len() - 1
-            } else {
-                *i - 1
-            }
+            let new = if *i == 0 { images.len() - 1 } else { *i - 1 };
+            web_sys::console::log_1(&format!("[gallery] prev: {} -> {}", *i, new).into());
+            new
         });
     };
 
     let next = move |_| {
+        web_sys::console::log_1(&"[gallery] next clicked".into());
         current_index.update(|i| {
-            if *i + 1 >= images.len() {
-                0
-            } else {
-                *i + 1
-            }
+            let new = if *i + 1 >= images.len() { 0 } else { *i + 1 };
+            web_sys::console::log_1(&format!("[gallery] next: {} -> {}", *i, new).into());
+            new
         });
     };
 
