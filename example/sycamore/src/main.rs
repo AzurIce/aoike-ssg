@@ -1,6 +1,9 @@
 use aoike_sycamore::{
-    components::giscus::{GiscusOptions, InputPosition},
     AoikeApp, ConfigContext,
+    components::{
+        CommentSystem,
+        giscus::{GiscusOptions, InputPosition},
+    },
 };
 
 mod docsgen;
@@ -28,8 +31,8 @@ fn main() {
                     //         document::Link { rel: "stylesheet", href: MAIN_CSS }
                     //     }
                     // })),
-                    giscus_options: Some(
-                        GiscusOptions::new(
+                    comment_system: Some(
+                        CommentSystem::Giscus(GiscusOptions::new(
                             "AzurIce/azurice.github.io".to_string(),
                             "R_kgDOI7WMeQ".to_string(),
                             "DIC_kwDOI7WMec4CUE3s".to_string(),
@@ -37,7 +40,7 @@ fn main() {
                         .with_category("Giscus".to_string())
                         .with_reactions_enabled(true)
                         .with_lazy(true)
-                        .with_input_position(InputPosition::Top),
+                        .with_input_position(InputPosition::Top)),
                     ),
                     ..Default::default()
                 },

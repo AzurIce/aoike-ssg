@@ -352,6 +352,18 @@
   background-color: var(--background-color, #ffffff);
 }
 
+.waline-comments {
+  width: 100%;
+  min-height: 200px;
+  margin-top: 1rem;
+
+  // Ensure Waline's root takes the available width inside the scroll box.
+  .waline-root,
+  .wl-cards {
+    width: 100%;
+  }
+}
+
 // MARK: responsive
 @media (max-width: 640px) {
   .gallery-main {

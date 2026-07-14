@@ -9,10 +9,41 @@ use sycamore::prelude::*;
 use sycamore_router::{navigate, HistoryIntegration, Route, Router};
 
 pub mod components {
+    pub mod comment_overlay;
     pub mod giscus;
+    pub mod waline;
+
+    use sycamore::prelude::*;
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum CommentSystem {
+        Giscus(giscus::GiscusOptions),
+        Waline(waline::WalineOptions),
+    }
+
+    pub fn render_comment_system(system: &CommentSystem, path: Option<String>) -> View {
+        match system {
+            CommentSystem::Giscus(options) => {
+                let options = if let Some(path) = path {
+                    options.clone().with_mapping(giscus::Mapping::Specific(path))
+                } else {
+                    options.clone()
+                };
+                view! { giscus::Giscus(options=options) }
+            }
+            CommentSystem::Waline(options) => {
+                let options = if let Some(path) = path {
+                    options.clone().with_path(path)
+                } else {
+                    options.clone()
+                };
+                view! { waline::Waline(options=options) }
+            }
+        }
+    }
 }
 
-use crate::{components::giscus::{GiscusOptions, Mapping}, layout::base::Header};
+use crate::{components::CommentSystem, layout::base::Header};
 
 pub mod layout {
     pub mod base;
@@ -28,6 +59,8 @@ enum AppRoutes {
     Post { slug: String },
     #[to("/gallery")]
     Gallery,
+    #[to("/gallery/<slug>")]
+    GalleryAlbum { slug: String },
     #[not_found]
     NotFound,
 }
@@ -43,7 +76,7 @@ pub struct ConfigContext {
     pub bilibili_url: Option<String>,
     pub steam_url: Option<String>,
     // pub extra_head: Option<<dyn FnOnce() -> View>>,
-    pub giscus_options: Option<GiscusOptions>,
+    pub comment_system: Option<CommentSystem>,
 }
 
 #[component(inline_props)]
@@ -63,7 +96,10 @@ pub fn AoikeApp(
                     Header()
 
                     main(class=move || {
-                        let is_gallery = matches!(route.get_clone(), AppRoutes::Gallery);
+                        let is_gallery = matches!(
+                            route.get_clone(),
+                            AppRoutes::Gallery | AppRoutes::GalleryAlbum { .. }
+                        );
                         format!(
                             "w-full m-x-auto flex flex-col items-center p-8 gap-4 {}",
                             if is_gallery { "gallery-main" } else { "max-w-[120ch]" }
@@ -80,7 +116,10 @@ pub fn AoikeApp(
                                 Post(posts=posts, slug=slug)
                             },
                             AppRoutes::Gallery => view! {
-                                GalleryPage(categories=gallery)
+                                GalleryPage(categories=gallery, slug="".to_string())
+                            },
+                            AppRoutes::GalleryAlbum { slug } => view! {
+                                GalleryPage(categories=gallery, slug=slug)
                             },
                             AppRoutes::NotFound => view! {
                                 NotFound()
@@ -135,8 +174,8 @@ pub fn Index(index: &'static PostData, posts: &'static [PostData]) -> View {
             div(dangerously_set_inner_html=content_html)
         }
 
-        (config.giscus_options.clone().map(|options| {
-            view! { components::giscus::Giscus(options=options) }
+        (config.comment_system.clone().map(|system| {
+            view! { components::comment_overlay::CommentOverlay(system=system, path="".to_string()) }
         }))
     }
 }
@@ -269,8 +308,8 @@ pub fn Post(posts: &'static [PostData], slug: String) -> View {
             div(dangerously_set_inner_html=content_html)
         }
 
-        (config.giscus_options.clone().map(|options| {
-            view! { components::giscus::Giscus(options=options) }
+        (config.comment_system.clone().map(|system| {
+            view! { components::comment_overlay::CommentOverlay(system=system, path="".to_string()) }
         }))
     }
 }
@@ -296,8 +335,20 @@ fn category_image_count(category: &'static GalleryCategory) -> usize {
 }
 
 #[component(inline_props)]
-pub fn GalleryPage(categories: &'static [GalleryCategory]) -> View {
-    let selected = create_signal(0usize);
+pub fn GalleryPage(
+    categories: &'static [GalleryCategory],
+    slug: String,
+) -> View {
+    let initial_idx = if slug.is_empty() {
+        0
+    } else {
+        categories
+            .iter()
+            .position(|c| c.slug == slug)
+            .unwrap_or(0)
+    };
+    let selected = create_signal(initial_idx);
+    let config = use_context::<ConfigContext>();
 
     if categories.is_empty() {
         return view! {
@@ -313,10 +364,14 @@ pub fn GalleryPage(categories: &'static [GalleryCategory]) -> View {
             h1(class="gallery-page-title") { "Gallery" }
             div(class="gallery-tabs") {
                 (categories.iter().enumerate().map(|(idx, category)| {
+                    let category_slug = category.slug.clone();
                     view! {
                         button(
                             class=move || format!("gallery-tab {}", if selected.get() == idx { "active" } else { "" }),
-                            on:click=move |_| selected.set(idx)
+                            on:click=move |_| {
+                                selected.set(idx);
+                                navigate(&format!("/gallery/{}", category_slug));
+                            }
                         ) {
                             (category.name.clone())
                             span(class="gallery-tab-count") { (format!("{}", category_image_count(category))) }
@@ -334,6 +389,9 @@ pub fn GalleryPage(categories: &'static [GalleryCategory]) -> View {
                     view! {}
                 }
             })
+            (config.comment_system.clone().map(|system| {
+                view! { components::comment_overlay::CommentOverlay(system=system, path="".to_string()) }
+            }))
         }
     }
 }
@@ -342,7 +400,6 @@ pub fn GalleryPage(categories: &'static [GalleryCategory]) -> View {
 pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
     let show = create_signal(false);
     let current_index = create_signal(0usize);
-    let config = use_context::<ConfigContext>();
 
     // Pre-compute a static render description for each timeline date group.
     // Each entry contains the date, flat indices for loose images, and for each folder group
@@ -483,18 +540,6 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
             (category.description_html.clone().map(|html| {
                 view! {
                     div(class="gallery-category-desc markdown", dangerously_set_inner_html=html)
-                }
-            }))
-            (config.giscus_options.clone().map(|options| {
-                let term = format!("gallery-{}", category.slug);
-                let options = options.with_mapping(Mapping::Specific(term)).with_lazy(false);
-                view! {
-                    div(class="gallery-comments-section") {
-                        h2(class="gallery-comments-title lxgw") { "相册留言" }
-                        div(class="gallery-comments") {
-                            components::giscus::Giscus(options=options)
-                        }
-                    }
                 }
             }))
             div(class="gallery-timeline") {
