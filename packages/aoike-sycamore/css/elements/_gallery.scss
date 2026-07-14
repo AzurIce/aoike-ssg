@@ -310,6 +310,10 @@
   padding: 2rem 0;
   color: var(--text-muted, #64748b);
   font-size: 0.9rem;
+
+  &.hidden {
+    display: none;
+  }
 }
 
 // MARK: responsive

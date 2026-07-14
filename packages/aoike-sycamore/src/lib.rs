@@ -493,12 +493,12 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
                 }).collect::<Vec<_>>())
             }
             (move || {
-                if visible_count.get() < total_items {
-                    view! {
-                        div(class="gallery-sentinel", r#ref=sentinel_ref) { "加载更多…" }
-                    }
-                } else {
-                    view! {}
+                let hidden = visible_count.get() >= total_items;
+                view! {
+                    div(
+                        class=format!("gallery-sentinel {}", if hidden { "hidden" } else { "" }),
+                        r#ref=sentinel_ref
+                    ) { "加载更多…" }
                 }
             })
             (move || {
