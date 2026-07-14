@@ -3,7 +3,8 @@ pub mod build;
 
 pub mod docsgen;
 
-use aoike::{GalleryCategory, GalleryImage, PostData};
+use aoike::{GalleryCategory, GalleryImage, GalleryTimelineItem, PostData};
+use wasm_bindgen::JsCast;
 use sycamore::prelude::*;
 use sycamore_router::{navigate, HistoryIntegration, Route, Router};
 
@@ -283,6 +284,11 @@ fn format_date(date: Option<aoike::time::Date>) -> String {
     }
 }
 
+fn category_image_count(category: &'static GalleryCategory) -> usize {
+    category.loose_images.len()
+        + category.groups.iter().map(|g| g.images.len()).sum::<usize>()
+}
+
 #[component(inline_props)]
 pub fn GalleryPage(categories: &'static [GalleryCategory]) -> View {
     let selected = create_signal(0usize);
@@ -304,7 +310,7 @@ pub fn GalleryPage(categories: &'static [GalleryCategory]) -> View {
                                     on:click=move |_| selected.set(idx)
                                 ) {
                                     (category.name.clone())
-                                    span(class="gallery-tab-count") { (format!("{}", category.images.len())) }
+                                    span(class="gallery-tab-count") { (format!("{}", category_image_count(category))) }
                                 }
                             }
                         }).collect::<Vec<_>>())
@@ -327,38 +333,146 @@ pub fn GalleryPage(categories: &'static [GalleryCategory]) -> View {
 
 #[component(inline_props)]
 pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
-    let images = category.images.as_slice();
     let show = create_signal(false);
     let current_index = create_signal(0usize);
+
+    // Build a flat list of all images in timeline order for the lightbox, along with the
+    // per-timeline-item flat index ranges needed for rendering.
+    let mut all_images: Vec<&'static GalleryImage> = Vec::new();
+    let mut render_items: Vec<(&'static GalleryTimelineItem, Vec<usize>)> = Vec::new();
+
+    for item in &category.timeline {
+        let start = all_images.len();
+        match item {
+            GalleryTimelineItem::DateGroup { image_indices, .. } => {
+                for &idx in image_indices {
+                    all_images.push(&category.loose_images[idx]);
+                }
+            }
+            GalleryTimelineItem::FolderGroup { group_idx } => {
+                for img in &category.groups[*group_idx].images {
+                    all_images.push(img);
+                }
+            }
+        }
+        let flat_indices: Vec<usize> = (start..all_images.len()).collect();
+        render_items.push((item, flat_indices));
+    }
+
+    let all_images: &'static [&'static GalleryImage] = Box::leak(all_images.into_boxed_slice());
+    let render_items: &'static [(&'static GalleryTimelineItem, &'static [usize])] = Box::leak(
+        render_items
+            .into_iter()
+            .map(|(item, indices)| (item, Box::leak(indices.into_boxed_slice()) as &'static [usize]))
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+    );
+    let total_items = render_items.len();
+
+    // Lazy loading state: how many timeline items are currently rendered.
+    let batch_size = 3usize;
+    let visible_count = create_signal(batch_size.min(total_items));
+    let sentinel_ref = create_node_ref();
+
+    on_mount(move || {
+        if let Some(sentinel) = sentinel_ref
+            .try_get()
+            .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        {
+            let visible_count = visible_count;
+            let closure = wasm_bindgen::closure::Closure::wrap(Box::new(
+                move |entries: js_sys::Array| {
+                    if let Some(entry) = entries
+                        .get(0)
+                        .dyn_ref::<web_sys::IntersectionObserverEntry>()
+                    {
+                        if entry.is_intersecting() {
+                            visible_count.update(|c| *c = (*c + batch_size).min(total_items));
+                        }
+                    }
+                },
+            )
+                as Box<dyn FnMut(js_sys::Array)>);
+
+            let observer = web_sys::IntersectionObserver::new_with_options(
+                closure.as_ref().unchecked_ref(),
+                &web_sys::IntersectionObserverInit::new(),
+            );
+            if let Ok(observer) = observer {
+                observer.observe(&sentinel);
+                closure.forget();
+            }
+        }
+    });
 
     view! {
         section(class="gallery-category") {
             div(class="gallery-timeline") {
-                (category.date_groups.iter().map(|(date, indices)| {
-                    view! {
-                        div(class="gallery-date-group") {
-                            h2(class="gallery-date-heading lxgw") { (format_date(*date)) }
-                            div(class="gallery-masonry") {
-                                (indices.iter().map(|&idx| {
-                                    view! {
-                                        GalleryCard(
-                                            image=&category.images[idx],
-                                            index=idx,
-                                            show=show,
-                                            current_index=current_index,
-                                        )
+                (render_items.iter().take(visible_count.get()).map(|(item, flat_indices)| {
+                    match item {
+                        GalleryTimelineItem::DateGroup { date, .. } => {
+                            view! {
+                                div(class="gallery-date-group") {
+                                    h2(class="gallery-date-heading lxgw") { (format_date(*date)) }
+                                    div(class="gallery-masonry") {
+                                        (flat_indices.iter().map(|&flat_idx| {
+                                            view! {
+                                                GalleryCard(
+                                                    image=all_images[flat_idx],
+                                                    flat_index=flat_idx,
+                                                    show=show,
+                                                    current_index=current_index,
+                                                )
+                                            }
+                                        }).collect::<Vec<_>>())
                                     }
-                                }).collect::<Vec<_>>())
+                                }
+                            }
+                        }
+                        GalleryTimelineItem::FolderGroup { group_idx } => {
+                            let group = &category.groups[*group_idx];
+                            view! {
+                                div(class="gallery-folder-group") {
+                                    div(class="gallery-folder-header") {
+                                        h2(class="gallery-folder-heading lxgw") { (group.name.clone()) }
+                                        (group.description_html.clone().map(|html| {
+                                            view! {
+                                                div(class="gallery-folder-desc markdown", dangerously_set_inner_html=html)
+                                            }
+                                        }))
+                                    }
+                                    div(class="gallery-masonry") {
+                                        (flat_indices.iter().map(|&flat_idx| {
+                                            view! {
+                                                GalleryCard(
+                                                    image=all_images[flat_idx],
+                                                    flat_index=flat_idx,
+                                                    show=show,
+                                                    current_index=current_index,
+                                                )
+                                            }
+                                        }).collect::<Vec<_>>())
+                                    }
+                                }
                             }
                         }
                     }
                 }).collect::<Vec<_>>())
             }
             (move || {
+                if visible_count.get() < total_items {
+                    view! {
+                        div(class="gallery-sentinel", r#ref=sentinel_ref) { "加载更多…" }
+                    }
+                } else {
+                    view! {}
+                }
+            })
+            (move || {
                 if show.get() {
                     view! {
                         GalleryLightbox(
-                            images=images,
+                            images=all_images,
                             current_index=current_index,
                             show=show,
                         )
@@ -374,7 +488,7 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
 #[component(inline_props)]
 pub fn GalleryCard(
     image: &'static GalleryImage,
-    index: usize,
+    flat_index: usize,
     show: Signal<bool>,
     current_index: Signal<usize>,
 ) -> View {
@@ -389,7 +503,7 @@ pub fn GalleryCard(
             class="gallery-card",
             style=aspect_style,
             on:click=move |_| {
-                current_index.set(index);
+                current_index.set(flat_index);
                 show.set(true);
             }
         ) {
@@ -408,7 +522,7 @@ pub fn GalleryCard(
 
 #[component(inline_props)]
 pub fn GalleryLightbox(
-    images: &'static [GalleryImage],
+    images: &'static [&'static GalleryImage],
     current_index: Signal<usize>,
     show: Signal<bool>,
 ) -> View {
@@ -442,7 +556,7 @@ pub fn GalleryLightbox(
 
             div(class="gallery-lightbox-content") {
                 (move || {
-                    let image = &images[current_index.get()];
+                    let image = images[current_index.get()];
                     view! {
                         img(
                             class="gallery-lightbox-img",

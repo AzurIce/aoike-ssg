@@ -32,9 +32,24 @@ pub struct GalleryImage {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct GalleryGroup {
+    pub name: String,
+    pub slug: String,
+    pub description_html: Option<String>,
+    pub images: Vec<GalleryImage>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum GalleryTimelineItem {
+    DateGroup { date: Option<Date>, image_indices: Vec<usize> },
+    FolderGroup { group_idx: usize },
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct GalleryCategory {
     pub name: String,
     pub slug: String,
-    pub images: Vec<GalleryImage>,
-    pub date_groups: Vec<(Option<Date>, Vec<usize>)>,
+    pub loose_images: Vec<GalleryImage>,
+    pub groups: Vec<GalleryGroup>,
+    pub timeline: Vec<GalleryTimelineItem>,
 }

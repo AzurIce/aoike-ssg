@@ -4,7 +4,7 @@ use anyhow::Context;
 use exif::{Exif, In, Reader, Tag, Value};
 use walkdir::WalkDir;
 
-use crate::{time::Date, GalleryCategory, GalleryImage};
+use crate::{time::Date, GalleryCategory, GalleryGroup, GalleryImage, GalleryTimelineItem};
 
 const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif"];
 
@@ -22,43 +22,107 @@ pub fn parse_gallery(dir: impl AsRef<Path>) -> Vec<GalleryCategory> {
             continue;
         }
 
-        let name = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unnamed")
-            .to_string();
-        let slug = slug::slugify(&name);
-
-        let mut images: Vec<GalleryImage> = WalkDir::new(&path)
-            .into_iter()
-            .flatten()
-            .filter(|e| e.file_type().is_file())
-            .filter_map(|e| parse_image(e.path(), dir, &slug))
-            .collect();
-
-        images.sort_by(|a, b| b.created.cmp(&a.created));
-
-        let date_groups = group_images_by_date(&images);
-
-        categories.push(GalleryCategory {
-            name,
-            slug,
-            images,
-            date_groups,
-        });
+        if let Some(category) = parse_category(&path) {
+            categories.push(category);
+        }
     }
 
     categories.sort_by(|a, b| a.name.cmp(&b.name));
     categories
 }
 
-fn group_images_by_date(images: &[GalleryImage]) -> Vec<(Option<Date>, Vec<usize>)> {
+fn parse_category(path: &Path) -> Option<GalleryCategory> {
+    let name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unnamed")
+        .to_string();
+    let slug = slug::slugify(&name);
+
+    let mut loose_images = Vec::new();
+    let mut groups = Vec::new();
+
+    for entry in std::fs::read_dir(path).unwrap().flatten() {
+        let entry_path = entry.path();
+
+        if entry_path.is_dir() {
+            if let Some(group) = parse_group(&entry_path, &slug) {
+                if !group.images.is_empty() {
+                    groups.push(group);
+                }
+            }
+        } else if is_image(&entry_path) {
+            if let Some(image) = parse_image(&entry_path, &slug, None) {
+                loose_images.push(image);
+            }
+        }
+    }
+
+    loose_images.sort_by(|a, b| b.created.cmp(&a.created));
+
+    let timeline = build_timeline(&loose_images, &groups);
+
+    Some(GalleryCategory {
+        name,
+        slug,
+        loose_images,
+        groups,
+        timeline,
+    })
+}
+
+fn parse_group(path: &Path, category_slug: &str) -> Option<GalleryGroup> {
+    let name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unnamed")
+        .to_string();
+    let slug = slug::slugify(&name);
+
+    let description_html = path
+        .join("index.md")
+        .exists()
+        .then(|| parse_markdown_file(&path.join("index.md")))
+        .flatten();
+
+    let images: Vec<GalleryImage> = WalkDir::new(path)
+        .into_iter()
+        .flatten()
+        .filter(|e| e.file_type().is_file() && is_image(e.path()))
+        .filter_map(|e| parse_image(e.path(), category_slug, Some(&slug)))
+        .collect();
+
+    // Preserve filesystem order within a group; don't sort by time.
+    // (If the user wants a specific order, they can rename files.)
+    Some(GalleryGroup {
+        name,
+        slug,
+        description_html,
+        images,
+    })
+}
+
+fn parse_markdown_file(path: &Path) -> Option<String> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let parser = pulldown_cmark::Parser::new(&content);
+    let mut html = String::new();
+    pulldown_cmark::html::push_html(&mut html, parser);
+    Some(html)
+}
+
+fn build_timeline(
+    loose_images: &[GalleryImage],
+    groups: &[GalleryGroup],
+) -> Vec<GalleryTimelineItem> {
     use std::collections::BTreeMap;
 
+    let mut items: Vec<(Option<Date>, GalleryTimelineItem)> = Vec::new();
+
+    // Loose images grouped by date
     let mut known: BTreeMap<Date, Vec<usize>> = BTreeMap::new();
     let mut unknown: Vec<usize> = Vec::new();
 
-    for (idx, image) in images.iter().enumerate() {
+    for (idx, image) in loose_images.iter().enumerate() {
         match image.created {
             Some(dt) => known.entry(dt.date()).or_default().push(idx),
             None => unknown.push(idx),
@@ -66,20 +130,31 @@ fn group_images_by_date(images: &[GalleryImage]) -> Vec<(Option<Date>, Vec<usize
     }
 
     for indices in known.values_mut() {
-        indices.sort_by(|&a, &b| images[b].created.cmp(&images[a].created));
+        indices.sort_by(|&a, &b| loose_images[b].created.cmp(&loose_images[a].created));
     }
 
-    let mut result: Vec<_> = known
-        .into_iter()
-        .map(|(date, indices)| (Some(date), indices))
-        .collect();
-    result.sort_by(|a, b| b.0.cmp(&a.0));
-
+    for (date, indices) in known {
+        items.push((Some(date), GalleryTimelineItem::DateGroup { date: Some(date), image_indices: indices }));
+    }
     if !unknown.is_empty() {
-        result.push((None, unknown));
+        items.push((None, GalleryTimelineItem::DateGroup { date: None, image_indices: unknown }));
     }
 
-    result
+    // Folder groups placed at their newest image date
+    for (group_idx, group) in groups.iter().enumerate() {
+        let date = group
+            .images
+            .iter()
+            .filter_map(|img| img.created)
+            .max()
+            .map(|dt| dt.date());
+        items.push((date, GalleryTimelineItem::FolderGroup { group_idx }));
+    }
+
+    // Sort descending by date; None (unknown) goes last.
+    items.sort_by(|a, b| b.0.cmp(&a.0));
+
+    items.into_iter().map(|(_, item)| item).collect()
 }
 
 fn is_image(path: &Path) -> bool {
@@ -89,7 +164,7 @@ fn is_image(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn parse_image(path: &Path, _gallery_dir: &Path, category_slug: &str) -> Option<GalleryImage> {
+fn parse_image(path: &Path, category_slug: &str, group_slug: Option<&str>) -> Option<GalleryImage> {
     if !is_image(path) {
         return None;
     }
@@ -100,7 +175,15 @@ fn parse_image(path: &Path, _gallery_dir: &Path, category_slug: &str) -> Option<
         .unwrap_or("image")
         .to_string();
 
-    let src = format!("/static/gallery/{}/{}", category_slug, path.file_name()?.to_str()?);
+    let src = match group_slug {
+        Some(gs) => format!(
+            "/static/gallery/{}/{}/{}",
+            category_slug,
+            gs,
+            path.file_name()?.to_str()?
+        ),
+        None => format!("/static/gallery/{}/{}", category_slug, path.file_name()?.to_str()?),
+    };
 
     let exif = read_exif(path).ok();
     let (width, height) = exif
@@ -314,29 +397,69 @@ fn date_tokens(date: Option<&Date>) -> proc_macro2::TokenStream {
     }
 }
 
+impl quote::ToTokens for GalleryGroup {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let Self {
+            name,
+            slug,
+            description_html,
+            images,
+        } = self;
+
+        let desc_tokens = match description_html {
+            Some(d) => quote::quote! { Some(#d.to_string()) },
+            None => quote::quote! { None },
+        };
+
+        tokens.extend(quote::quote! {
+            aoike::GalleryGroup {
+                name: #name.to_string(),
+                slug: #slug.to_string(),
+                description_html: #desc_tokens,
+                images: vec![#(#images),*],
+            }
+        });
+    }
+}
+
+impl quote::ToTokens for GalleryTimelineItem {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        match self {
+            Self::DateGroup { date, image_indices } => {
+                let date_tok = date_tokens(date.as_ref());
+                tokens.extend(quote::quote! {
+                    aoike::GalleryTimelineItem::DateGroup {
+                        date: #date_tok,
+                        image_indices: vec![#(#image_indices),*],
+                    }
+                });
+            }
+            Self::FolderGroup { group_idx } => {
+                tokens.extend(quote::quote! {
+                    aoike::GalleryTimelineItem::FolderGroup { group_idx: #group_idx }
+                });
+            }
+        }
+    }
+}
+
 impl quote::ToTokens for GalleryCategory {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let Self {
             name,
             slug,
-            images,
-            date_groups,
+            loose_images,
+            groups,
+            timeline,
         } = self;
-
-        let group_tokens: Vec<_> = date_groups
-            .iter()
-            .map(|(date, indices)| {
-                let date_tok = date_tokens(date.as_ref());
-                quote::quote! { (#date_tok, vec![#(#indices),*]) }
-            })
-            .collect();
 
         tokens.extend(quote::quote! {
             aoike::GalleryCategory {
                 name: #name.to_string(),
                 slug: #slug.to_string(),
-                images: vec![#(#images),*],
-                date_groups: vec![#(#group_tokens),*],
+                loose_images: vec![#(#loose_images),*],
+                groups: vec![#(#groups),*],
+                timeline: vec![#(#timeline),*],
             }
         });
     }

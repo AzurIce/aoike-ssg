@@ -106,12 +106,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "aoike",
+ "js-sys",
  "sha1",
  "sycamore",
  "sycamore-router",
  "time",
  "walkdir",
  "wasm-bindgen",
+ "web-sys",
  "zip",
 ]
 
