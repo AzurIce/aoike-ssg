@@ -40,6 +40,12 @@ fn parse_category(path: &Path) -> Option<GalleryCategory> {
     let slug = slug::slugify(&name);
     let src_prefix = format!("/static/gallery/{}", name);
 
+    let description_html = path
+        .join("index.md")
+        .exists()
+        .then(|| parse_markdown_file(&path.join("index.md")))
+        .flatten();
+
     let mut loose_images = Vec::new();
     let mut groups = Vec::new();
 
@@ -66,6 +72,7 @@ fn parse_category(path: &Path) -> Option<GalleryCategory> {
     Some(GalleryCategory {
         name,
         slug,
+        description_html,
         loose_images,
         groups,
         timeline,
@@ -474,15 +481,22 @@ impl quote::ToTokens for GalleryCategory {
         let Self {
             name,
             slug,
+            description_html,
             loose_images,
             groups,
             timeline,
         } = self;
 
+        let desc_tokens = match description_html {
+            Some(d) => quote::quote! { Some(#d.to_string()) },
+            None => quote::quote! { None },
+        };
+
         tokens.extend(quote::quote! {
             aoike::GalleryCategory {
                 name: #name.to_string(),
                 slug: #slug.to_string(),
+                description_html: #desc_tokens,
                 loose_images: vec![#(#loose_images),*],
                 groups: vec![#(#groups),*],
                 timeline: vec![#(#timeline),*],

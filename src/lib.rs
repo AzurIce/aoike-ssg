@@ -52,6 +52,7 @@ pub enum GalleryTimelineItem {
 pub struct GalleryCategory {
     pub name: String,
     pub slug: String,
+    pub description_html: Option<String>,
     pub loose_images: Vec<GalleryImage>,
     pub groups: Vec<GalleryGroup>,
     pub timeline: Vec<GalleryTimelineItem>,

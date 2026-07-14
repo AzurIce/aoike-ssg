@@ -449,6 +449,11 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
 
     view! {
         section(class="gallery-category") {
+            (category.description_html.clone().map(|html| {
+                view! {
+                    div(class="gallery-category-desc markdown", dangerously_set_inner_html=html)
+                }
+            }))
             div(class="gallery-timeline") {
                 (render_items.iter().take(visible_count.get()).map(|item| {
                     view! {

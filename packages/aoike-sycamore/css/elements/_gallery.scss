@@ -82,6 +82,15 @@
   width: 100%;
 }
 
+.gallery-category-desc {
+  margin-bottom: 1.5rem;
+
+  &.markdown {
+    max-width: none;
+    margin-inline: 0;
+  }
+}
+
 .gallery-timeline {
   display: flex;
   flex-direction: column;
