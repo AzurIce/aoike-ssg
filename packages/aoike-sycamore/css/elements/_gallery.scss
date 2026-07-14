@@ -330,6 +330,28 @@
   }
 }
 
+// MARK: comments
+.gallery-comments-section {
+  width: 100%;
+  margin-top: 2.5rem;
+}
+
+.gallery-comments-title {
+  margin: 0 0 1rem 0;
+  color: var(--text-color, #1e293b);
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.gallery-comments {
+  max-height: 600px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  background-color: var(--background-color, #ffffff);
+}
+
 // MARK: responsive
 @media (max-width: 640px) {
   .gallery-main {

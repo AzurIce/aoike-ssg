@@ -12,7 +12,7 @@ pub mod components {
     pub mod giscus;
 }
 
-use crate::{components::giscus::GiscusOptions, layout::base::Header};
+use crate::{components::giscus::{GiscusOptions, Mapping}, layout::base::Header};
 
 pub mod layout {
     pub mod base;
@@ -299,38 +299,39 @@ fn category_image_count(category: &'static GalleryCategory) -> usize {
 pub fn GalleryPage(categories: &'static [GalleryCategory]) -> View {
     let selected = create_signal(0usize);
 
+    if categories.is_empty() {
+        return view! {
+            div(class="gallery-page") {
+                h1(class="gallery-page-title") { "Gallery" }
+                p(class="gallery-empty") { "还没有图片哦~" }
+            }
+        };
+    }
+
     view! {
         div(class="gallery-page") {
             h1(class="gallery-page-title") { "Gallery" }
-            (if categories.is_empty() {
-                view! {
-                    p(class="gallery-empty") { "还没有图片哦~" }
-                }
-            } else {
-                view! {
-                    div(class="gallery-tabs") {
-                        (categories.iter().enumerate().map(|(idx, category)| {
-                            view! {
-                                button(
-                                    class=move || format!("gallery-tab {}", if selected.get() == idx { "active" } else { "" }),
-                                    on:click=move |_| selected.set(idx)
-                                ) {
-                                    (category.name.clone())
-                                    span(class="gallery-tab-count") { (format!("{}", category_image_count(category))) }
-                                }
-                            }
-                        }).collect::<Vec<_>>())
-                    }
-                    (move || {
-                        let idx = selected.get();
-                        if let Some(category) = categories.get(idx) {
-                            view! {
-                                GalleryCategoryTimeline(category=category)
-                            }
-                        } else {
-                            view! {}
+            div(class="gallery-tabs") {
+                (categories.iter().enumerate().map(|(idx, category)| {
+                    view! {
+                        button(
+                            class=move || format!("gallery-tab {}", if selected.get() == idx { "active" } else { "" }),
+                            on:click=move |_| selected.set(idx)
+                        ) {
+                            (category.name.clone())
+                            span(class="gallery-tab-count") { (format!("{}", category_image_count(category))) }
                         }
-                    })
+                    }
+                }).collect::<Vec<_>>())
+            }
+            (move || {
+                let idx = selected.get();
+                if let Some(category) = categories.get(idx) {
+                    view! {
+                        GalleryCategoryTimeline(category=category)
+                    }
+                } else {
+                    view! {}
                 }
             })
         }
@@ -341,6 +342,7 @@ pub fn GalleryPage(categories: &'static [GalleryCategory]) -> View {
 pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
     let show = create_signal(false);
     let current_index = create_signal(0usize);
+    let config = use_context::<ConfigContext>();
 
     // Pre-compute a static render description for each timeline date group.
     // Each entry contains the date, flat indices for loose images, and for each folder group
@@ -398,33 +400,67 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
     let render_items: &'static [RenderDateGroup] = Box::leak(render_items.into_boxed_slice());
     let total_items = render_items.len();
 
+    // Map each flat image index to the render_items index that contains it.
+    let flat_to_item: &'static [usize] = Box::leak(
+        (0..all_images.len())
+            .map(|flat_idx| {
+                render_items
+                    .iter()
+                    .position(|item| {
+                        item.loose_indices.contains(&flat_idx)
+                            || item.groups.iter().any(|g| g.indices.contains(&flat_idx))
+                    })
+                    .unwrap_or(0)
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+    );
+
     // Lazy loading state: how many timeline date groups are currently rendered.
     let batch_size = 3usize;
     let visible_count = create_signal(batch_size.min(total_items));
     let sentinel_ref = create_node_ref();
 
+    // When navigating the lightbox, ensure the current image's date group is loaded
+    // and scroll the corresponding card into view.
+    create_effect(move || {
+        if !show.get() {
+            return;
+        }
+        let flat_idx = current_index.get();
+        if flat_idx >= flat_to_item.len() {
+            return;
+        }
+        let item_idx = flat_to_item[flat_idx];
+        if item_idx >= visible_count.get() {
+            visible_count.set(item_idx + 1);
+        }
+        let id = format!("gallery-img-{}", flat_idx);
+        if let Some(window) = web_sys::window() {
+            if let Some(document) = window.document() {
+                if let Some(element) = document.get_element_by_id(&id) {
+                    let options = web_sys::ScrollIntoViewOptions::new();
+                    options.set_block(web_sys::ScrollLogicalPosition::Center);
+                    element.scroll_into_view_with_scroll_into_view_options(&options);
+                }
+            }
+        }
+    });
+
     on_mount(move || {
-        web_sys::console::log_1(&"[gallery] on_mount".into());
         if let Some(sentinel) = sentinel_ref
             .try_get()
             .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
         {
-            web_sys::console::log_1(&format!("[gallery] sentinel found, total_items={}, visible_count={}", total_items, visible_count.get()).into());
             let visible_count = visible_count;
             let closure = wasm_bindgen::closure::Closure::wrap(Box::new(
                 move |entries: js_sys::Array| {
-                    web_sys::console::log_1(&format!("[gallery] observer callback fired, entries={}", entries.length()).into());
                     if let Some(entry) = entries
                         .get(0)
                         .dyn_ref::<web_sys::IntersectionObserverEntry>()
                     {
-                        web_sys::console::log_1(&format!("[gallery] entry is_intersecting={}", entry.is_intersecting()).into());
                         if entry.is_intersecting() {
-                            visible_count.update(|c| {
-                                let new = (*c + batch_size).min(total_items);
-                                web_sys::console::log_1(&format!("[gallery] loading more: {} -> {}", c, new).into());
-                                *c = new
-                            });
+                            visible_count.update(|c| *c = (*c + batch_size).min(total_items));
                         }
                     }
                 },
@@ -436,14 +472,9 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
                 &web_sys::IntersectionObserverInit::new(),
             );
             if let Ok(observer) = observer {
-                web_sys::console::log_1(&"[gallery] observer created, observing sentinel".into());
                 observer.observe(&sentinel);
                 closure.forget();
-            } else {
-                web_sys::console::log_1(&"[gallery] failed to create observer".into());
             }
-        } else {
-            web_sys::console::log_1(&"[gallery] sentinel not found".into());
         }
     });
 
@@ -452,6 +483,18 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
             (category.description_html.clone().map(|html| {
                 view! {
                     div(class="gallery-category-desc markdown", dangerously_set_inner_html=html)
+                }
+            }))
+            (config.giscus_options.clone().map(|options| {
+                let term = format!("gallery-{}", category.slug);
+                let options = options.with_mapping(Mapping::Specific(term)).with_lazy(false);
+                view! {
+                    div(class="gallery-comments-section") {
+                        h2(class="gallery-comments-title lxgw") { "相册留言" }
+                        div(class="gallery-comments") {
+                            components::giscus::Giscus(options=options)
+                        }
+                    }
                 }
             }))
             div(class="gallery-timeline") {
@@ -547,6 +590,7 @@ pub fn GalleryCard(
     view! {
         div(
             class="gallery-card",
+            id=format!("gallery-img-{}", flat_index),
             style=aspect_style,
             on:click=move |_| {
                 current_index.set(flat_index);
@@ -575,20 +619,14 @@ pub fn GalleryLightbox(
     let close = move |_| show.set(false);
 
     let prev = move |_| {
-        web_sys::console::log_1(&"[gallery] prev clicked".into());
         current_index.update(|i| {
-            let new = if *i == 0 { images.len() - 1 } else { *i - 1 };
-            web_sys::console::log_1(&format!("[gallery] prev: {} -> {}", *i, new).into());
-            new
+            *i = if *i == 0 { images.len() - 1 } else { *i - 1 };
         });
     };
 
     let next = move |_| {
-        web_sys::console::log_1(&"[gallery] next clicked".into());
         current_index.update(|i| {
-            let new = if *i + 1 >= images.len() { 0 } else { *i + 1 };
-            web_sys::console::log_1(&format!("[gallery] next: {} -> {}", *i, new).into());
-            new
+            *i = if *i + 1 >= images.len() { 0 } else { *i + 1 };
         });
     };
 

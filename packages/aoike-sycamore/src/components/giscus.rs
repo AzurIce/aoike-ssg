@@ -57,6 +57,10 @@ impl GiscusOptions {
         self.input_position = input_position;
         self
     }
+    pub fn with_mapping(mut self, mapping: Mapping) -> Self {
+        self.mapping = mapping;
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
