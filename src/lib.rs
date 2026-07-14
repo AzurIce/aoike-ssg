@@ -19,3 +19,21 @@ pub struct Site {
     pub posts: &'static [PostData],
     pub index: &'static PostData,
 }
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GalleryImage {
+    pub src: String,
+    pub thumb_src: Option<String>,
+    pub width: u32,
+    pub height: u32,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub created: Option<UtcDateTime>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GalleryCategory {
+    pub name: String,
+    pub slug: String,
+    pub images: Vec<GalleryImage>,
+}

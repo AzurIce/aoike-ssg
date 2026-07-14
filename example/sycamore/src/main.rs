@@ -43,6 +43,7 @@ fn main() {
                 },
                 index=docsgen::index(),
                 posts=docsgen::posts(),
+                gallery=docsgen::gallery(),
             )
         }
     });

@@ -33,6 +33,9 @@ pub fn Header() -> View {
                 a(class="h-10 gap-1 nav-btn text-sm p-x-4", href="/posts") {
                     "文章"
                 }
+                a(class="h-10 gap-1 nav-btn text-sm p-x-4", href="/gallery") {
+                    "画廊"
+                }
                 a(class="h-10 gap-1 nav-btn text-sm p-x-4", href="/search") {
                     "搜索"
                 }

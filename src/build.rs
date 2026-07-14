@@ -1,3 +1,4 @@
+pub mod gallery;
 pub mod post;
 pub mod utils;
 

@@ -18,9 +18,12 @@ fn main() {
         Some("</head>"),
     )
     .unwrap();
+    let gallery = aoike::build::gallery::parse_gallery("doc-src/gallery");
+
     let out_dir = std::env::current_dir().unwrap().join("src");
     let code = std::fs::read_to_string(out_dir.join("docsgen.rs")).unwrap_or(String::new());
-    let gen_code = aoike::build::generate_code(posts, index);
+    let mut gen_code = aoike::build::generate_code(posts, index);
+    gen_code.push_str(&aoike::build::gallery::generate_gallery_code(gallery));
     if code != gen_code {
         std::fs::write(out_dir.join("docsgen.rs"), gen_code).unwrap();
     }
