@@ -5,9 +5,21 @@ use crate::components::{render_comment_system, CommentSystem};
 #[component(inline_props)]
 pub fn CommentOverlay(system: CommentSystem, path: String) -> View {
     let expanded = create_signal(false);
+    let display_path = create_signal(path.clone());
 
     let toggle = move |_| expanded.set(!expanded.get());
     let collapse = move |_| expanded.set(false);
+
+    let mount_path = path.clone();
+    on_mount(move || {
+        if mount_path.is_empty() {
+            if let Some(window) = web_sys::window() {
+                if let Ok(pathname) = window.location().pathname() {
+                    display_path.set(pathname);
+                }
+            }
+        }
+    });
 
     view! {
         div(
@@ -23,7 +35,12 @@ pub fn CommentOverlay(system: CommentSystem, path: String) -> View {
                 on:click=toggle,
                 aria-expanded=move || expanded.get().to_string()
             ) {
-                span(class="comment-overlay-title") { "评论" }
+                span(class="comment-overlay-title") {
+                    span(class="comment-overlay-title-text") { "评论" }
+                    span(class="comment-overlay-path") {
+                        (move || display_path.get_clone())
+                    }
+                }
                 span(class="comment-overlay-chevron") {
                     (move || if expanded.get() { "↓" } else { "↑" })
                 }

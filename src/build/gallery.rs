@@ -53,13 +53,13 @@ fn parse_category(path: &Path) -> Option<GalleryCategory> {
         let entry_path = entry.path();
 
         if entry_path.is_dir() {
-            if let Some(group) = parse_group(&entry_path, &src_prefix) {
+            if let Some(group) = parse_group(&entry_path, path, &src_prefix) {
                 if !group.images.is_empty() {
                     groups.push(group);
                 }
             }
         } else if is_image(&entry_path) {
-            if let Some(image) = parse_image(&entry_path, &src_prefix) {
+            if let Some(image) = parse_image(&entry_path, path, &src_prefix) {
                 loose_images.push(image);
             }
         }
@@ -79,15 +79,17 @@ fn parse_category(path: &Path) -> Option<GalleryCategory> {
     })
 }
 
-fn parse_group(path: &Path, category_src_prefix: &str) -> Option<GalleryGroup> {
+fn parse_group(
+    path: &Path,
+    category_root: &Path,
+    category_src_prefix: &str,
+) -> Option<GalleryGroup> {
     let name = path
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("unnamed")
         .to_string();
     let slug = slug::slugify(&name);
-    let src_prefix = format!("{}/{}", category_src_prefix, name);
-
     let description_html = path
         .join("index.md")
         .exists()
@@ -98,7 +100,7 @@ fn parse_group(path: &Path, category_src_prefix: &str) -> Option<GalleryGroup> {
         .into_iter()
         .flatten()
         .filter(|e| e.file_type().is_file() && is_image(e.path()))
-        .filter_map(|e| parse_image(e.path(), &src_prefix))
+        .filter_map(|e| parse_image(e.path(), category_root, category_src_prefix))
         .collect();
 
     // Preserve filesystem order within a group; don't sort by time.
@@ -205,7 +207,7 @@ fn is_image(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn parse_image(path: &Path, src_prefix: &str) -> Option<GalleryImage> {
+fn parse_image(path: &Path, source_root: &Path, src_prefix: &str) -> Option<GalleryImage> {
     if !is_image(path) {
         return None;
     }
@@ -216,7 +218,7 @@ fn parse_image(path: &Path, src_prefix: &str) -> Option<GalleryImage> {
         .unwrap_or("image")
         .to_string();
 
-    let src = format!("{}/{}", src_prefix, path.file_name()?.to_str()?);
+    let src = gallery_image_src(path, source_root, src_prefix)?;
 
     let exif = read_exif(path).ok();
     let (width, height) = exif
@@ -236,12 +238,21 @@ fn parse_image(path: &Path, src_prefix: &str) -> Option<GalleryImage> {
         .and_then(|e| exif_string(e, Tag::UserComment))
         .filter(|s| !s.is_empty());
 
+    let offset_original = exif
+        .as_ref()
+        .and_then(|e| exif_string(e, Tag::OffsetTimeOriginal));
+    let offset_datetime = exif
+        .as_ref()
+        .and_then(|e| exif_string(e, Tag::OffsetTime));
+
     let created = exif
         .as_ref()
-        .and_then(|e| exif_datetime(e, Tag::DateTimeOriginal))
-        .or_else(|| exif.as_ref().and_then(|e| exif_datetime(e, Tag::DateTime)))
+        .and_then(|e| exif_datetime(e, Tag::DateTimeOriginal, offset_original.as_deref()))
+        .or_else(|| exif.as_ref().and_then(|e| exif_datetime(e, Tag::DateTime, offset_datetime.as_deref())))
         .or_else(|| datetime_from_filename(&file_name))
         .or_else(|| file_created_datetime(path));
+
+    let (rating, label) = read_xmp_metadata(path);
 
     Some(GalleryImage {
         src,
@@ -251,7 +262,19 @@ fn parse_image(path: &Path, src_prefix: &str) -> Option<GalleryImage> {
         title,
         description,
         created,
+        rating,
+        label,
     })
+}
+
+fn gallery_image_src(path: &Path, source_root: &Path, src_prefix: &str) -> Option<String> {
+    let relative_path = path.strip_prefix(source_root).ok()?;
+    let relative_url = relative_path
+        .components()
+        .map(|component| component.as_os_str().to_str())
+        .collect::<Option<Vec<_>>>()?
+        .join("/");
+    Some(format!("{}/{}", src_prefix, relative_url))
 }
 
 fn read_exif(path: &Path) -> anyhow::Result<Exif> {
@@ -278,6 +301,71 @@ fn image_dimensions_from_exif(exif: &Exif) -> Option<(u32, u32)> {
     Some((width, height))
 }
 
+const XMP_SIGNATURE: &[u8] = b"http://ns.adobe.com/xap/1.0/\0";
+
+fn read_xmp_metadata(path: &Path) -> (Option<u8>, Option<String>) {
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(_) => return (None, None),
+    };
+    let packet = match extract_xmp_packet(&bytes) {
+        Some(p) => p,
+        None => return (None, None),
+    };
+    let text = String::from_utf8_lossy(&packet);
+    (parse_xmp_rating(&text), parse_xmp_label(&text))
+}
+
+fn extract_xmp_packet(jpeg_bytes: &[u8]) -> Option<Vec<u8>> {
+    if jpeg_bytes.len() < 2 || jpeg_bytes[0] != 0xFF || jpeg_bytes[1] != 0xD8 {
+        return None;
+    }
+    let mut i = 2usize;
+    while i + 4 < jpeg_bytes.len() {
+        if jpeg_bytes[i] != 0xFF {
+            return None;
+        }
+        let marker = jpeg_bytes[i + 1];
+        if marker == 0xD9 || marker == 0xD8 || marker == 0x01 || (0xD0..=0xD7).contains(&marker) {
+            i += 2;
+            continue;
+        }
+        let len = u16::from_be_bytes([jpeg_bytes[i + 2], jpeg_bytes[i + 3]]) as usize;
+        let segment_end = i + 2 + len;
+        if segment_end > jpeg_bytes.len() {
+            return None;
+        }
+        if marker == 0xE1 && len > XMP_SIGNATURE.len() {
+            let payload_start = i + 4;
+            let sig_end = payload_start + XMP_SIGNATURE.len();
+            if sig_end <= segment_end && &jpeg_bytes[payload_start..sig_end] == XMP_SIGNATURE {
+                return Some(jpeg_bytes[sig_end..segment_end].to_vec());
+            }
+        }
+        i = segment_end;
+    }
+    None
+}
+
+fn parse_xmp_rating(xmp_text: &str) -> Option<u8> {
+    let re = regex::Regex::new(r"<xmp:Rating[^>]*>([^<]+)</xmp:Rating>").ok()?;
+    re.captures(xmp_text)
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str().trim())
+        .and_then(|s| s.parse::<u8>().ok())
+        .filter(|&r| r > 0)
+}
+
+fn parse_xmp_label(xmp_text: &str) -> Option<String> {
+    // Match both <xmp:Label>Red</xmp:Label> and <xmp:Label rdf:parseType="Resource">...</xmp:Label>
+    // For our use case a simple tag content extraction is sufficient.
+    let re = regex::Regex::new(r"<xmp:Label[^>]*>([^<]+)</xmp:Label>").ok()?;
+    re.captures(xmp_text)
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str().trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
 fn exif_string(exif: &Exif, tag: Tag) -> Option<String> {
     let field = exif.get_field(tag, In::PRIMARY)?;
     match &field.value {
@@ -289,9 +377,13 @@ fn exif_string(exif: &Exif, tag: Tag) -> Option<String> {
     }
 }
 
-fn exif_datetime(exif: &Exif, tag: Tag) -> Option<crate::time::UtcDateTime> {
+fn exif_datetime(
+    exif: &Exif,
+    tag: Tag,
+    offset: Option<&str>,
+) -> Option<crate::time::UtcDateTime> {
     let s = exif_string(exif, tag)?;
-    parse_exif_datetime(&s)
+    parse_exif_datetime(&s, offset)
 }
 
 fn datetime_from_filename(name: &str) -> Option<crate::time::UtcDateTime> {
@@ -321,8 +413,10 @@ fn datetime_from_filename(name: &str) -> Option<crate::time::UtcDateTime> {
 
 fn file_created_datetime(path: &Path) -> Option<crate::time::UtcDateTime> {
     let metadata = std::fs::metadata(path).ok()?;
-    let created = metadata.created().ok()?;
-    let duration = created.duration_since(std::time::UNIX_EPOCH).ok()?;
+    // Prefer modification time: it is usually preserved when files are copied,
+    // whereas creation time on Windows is often refreshed to the copy time.
+    let time = metadata.modified().ok().or_else(|| metadata.created().ok())?;
+    let duration = time.duration_since(std::time::UNIX_EPOCH).ok()?;
     crate::time::UtcDateTime::from_unix_timestamp(duration.as_secs() as i64).ok()
 }
 
@@ -339,13 +433,17 @@ fn build_datetime(
     Some(crate::time::UtcDateTime::new(date, time))
 }
 
-fn parse_exif_datetime(s: &str) -> Option<crate::time::UtcDateTime> {
-    // EXIF DateTime format: "2023:10:01 12:34:56"
+fn parse_exif_datetime(s: &str, offset: Option<&str>) -> Option<crate::time::UtcDateTime> {
+    // EXIF DateTime format is "2023:10:01 12:34:56", but some tools write
+    // "2023-10-01 12:34:56". Accept both ':' and '-' as date separators.
+    let s = s.trim();
     let parts: Vec<&str> = s.split_whitespace().collect();
     if parts.len() != 2 {
         return None;
     }
-    let date_parts: Vec<&str> = parts[0].split(':').collect();
+
+    let date_delim = if parts[0].contains(':') { ':' } else { '-' };
+    let date_parts: Vec<&str> = parts[0].split(date_delim).collect();
     let time_parts: Vec<&str> = parts[1].split(':').collect();
     if date_parts.len() != 3 || time_parts.len() != 3 {
         return None;
@@ -358,7 +456,36 @@ fn parse_exif_datetime(s: &str) -> Option<crate::time::UtcDateTime> {
     let minute: u8 = time_parts[1].parse().ok()?;
     let second: u8 = time_parts[2].parse().ok()?;
 
-    build_datetime(year, month, day, hour, minute, second)
+    let date = crate::time::Date::from_calendar_date(year, month.try_into().ok()?, day).ok()?;
+    let time = crate::time::Time::from_hms(hour, minute, second).ok()?;
+    let local_dt = crate::time::PrimitiveDateTime::new(date, time);
+
+    let offset = offset
+        .and_then(parse_exif_offset)
+        .unwrap_or(crate::time::UtcOffset::UTC);
+    let utc_dt = local_dt.assume_offset(offset).to_offset(crate::time::UtcOffset::UTC);
+
+    Some(crate::time::UtcDateTime::new(utc_dt.date(), utc_dt.time()))
+}
+
+fn parse_exif_offset(s: &str) -> Option<crate::time::UtcOffset> {
+    // EXIF offset format: "+08:00", "-05:00", "+00:00", or "Z" for UTC.
+    let s = s.trim();
+    if s.eq_ignore_ascii_case("Z") || s == "+00:00" {
+        return Some(crate::time::UtcOffset::UTC);
+    }
+    let bytes = s.as_bytes();
+    if bytes.len() != 6 || bytes[3] != b':' {
+        return None;
+    }
+    let sign: i8 = match bytes[0] {
+        b'+' => 1,
+        b'-' => -1,
+        _ => return None,
+    };
+    let hours: i8 = s[1..3].parse().ok()?;
+    let minutes: i8 = s[4..6].parse().ok()?;
+    crate::time::UtcOffset::from_hms(sign * hours, sign * minutes, 0).ok()
 }
 
 impl quote::ToTokens for GalleryImage {
@@ -371,6 +498,8 @@ impl quote::ToTokens for GalleryImage {
             title,
             description,
             created,
+            rating,
+            label,
         } = self;
 
         let thumb_src_tokens = match thumb_src {
@@ -398,6 +527,16 @@ impl quote::ToTokens for GalleryImage {
             None => quote::quote! { None },
         };
 
+        let rating_tokens = match rating {
+            Some(r) => quote::quote! { Some(#r) },
+            None => quote::quote! { None },
+        };
+
+        let label_tokens = match label {
+            Some(l) => quote::quote! { Some(#l.to_string()) },
+            None => quote::quote! { None },
+        };
+
         tokens.extend(quote::quote! {
             aoike::GalleryImage {
                 src: #src.to_string(),
@@ -407,6 +546,8 @@ impl quote::ToTokens for GalleryImage {
                 title: #title_tokens,
                 description: #desc_tokens,
                 created: #created_tokens,
+                rating: #rating_tokens,
+                label: #label_tokens,
             }
         });
     }
@@ -520,4 +661,33 @@ pub fn generate_gallery_code(categories: Vec<GalleryCategory>) -> String {
     prettyplease::unparse(&syn::parse_quote! {
         #token
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{gallery_image_src, parse_xmp_label, parse_xmp_rating};
+    use std::path::Path;
+
+    #[test]
+    fn nested_gallery_image_src_keeps_all_subdirectories() {
+        let root = Path::new("static").join("gallery").join("地球 OL");
+        let image = root
+            .join("2025-10-25 灵山彗星银河流星")
+            .join("银河小延时")
+            .join("DSC01730_gallery.jpg");
+
+        assert_eq!(
+            gallery_image_src(&image, &root, "/static/gallery/地球 OL").as_deref(),
+            Some(
+                "/static/gallery/地球 OL/2025-10-25 灵山彗星银河流星/银河小延时/DSC01730_gallery.jpg"
+            )
+        );
+    }
+
+    #[test]
+    fn parses_rating_and_label_from_embedded_xmp_text() {
+        let xmp = "<xmp:Rating>5</xmp:Rating><xmp:Label>Red</xmp:Label>";
+        assert_eq!(parse_xmp_rating(xmp), Some(5));
+        assert_eq!(parse_xmp_label(xmp).as_deref(), Some("Red"));
+    }
 }

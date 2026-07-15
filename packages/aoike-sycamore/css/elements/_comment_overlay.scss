@@ -44,6 +44,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
+  min-width: 0;
+  overflow: hidden;
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.08);
   transition: background-color 0.2s ease;
 
@@ -54,11 +56,27 @@
 
 .comment-overlay-title {
   display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.comment-overlay-title-text {
+  flex-shrink: 0;
+}
+
+.comment-overlay-path {
+  font-size: 0.75rem;
+  font-weight: 400;
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .comment-overlay-chevron {
+  flex-shrink: 0;
   font-size: 0.85rem;
   opacity: 0.7;
 }

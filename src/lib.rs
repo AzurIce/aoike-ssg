@@ -29,6 +29,8 @@ pub struct GalleryImage {
     pub title: Option<String>,
     pub description: Option<String>,
     pub created: Option<UtcDateTime>,
+    pub rating: Option<u8>,
+    pub label: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
