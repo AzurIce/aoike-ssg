@@ -414,6 +414,7 @@ pub fn GalleryPage(categories: &'static [GalleryCategory], slug: String) -> View
 pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
     let show = create_signal(false);
     let current_index = create_signal(0usize);
+    let visible_date_groups = create_signal(1usize);
 
     // Pre-compute a static render description for each timeline date group.
     // Each entry contains the date, flat indices for loose images, and for each folder group
@@ -509,6 +510,12 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
     // Default to the most recent year that has images.
     let selected_year = create_signal(year_groups.last().map(|yg| yg.year));
 
+    // Switching years starts the timeline from its newest date again.
+    create_effect(move || {
+        selected_year.get();
+        visible_date_groups.set(1);
+    });
+
     // When navigating the lightbox, scroll the current card into view.
     create_effect(move || {
         if !show.get() {
@@ -555,7 +562,10 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
                         .and_then(|year| year_groups.iter().find(|yg| yg.year == year))
                         .map(|yg| yg.item_indices.iter().map(|&idx| &render_items[idx]).collect())
                         .unwrap_or_default();
-                    items.into_iter().map(|item| {
+                    let total_date_groups = items.len();
+                    let visible_count = visible_date_groups.get().min(total_date_groups);
+                    let has_more = visible_count < total_date_groups;
+                    let date_groups = items.into_iter().take(visible_count).map(|item| {
                         view! {
                             div(class="gallery-date-group") {
                                 h2(class="gallery-date-heading lxgw") { (format_date(item.date)) }
@@ -596,7 +606,20 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
                                 }
                             }
                         }
-                    }).collect::<Vec<_>>()
+                    }).collect::<Vec<_>>();
+                    view! {
+                        (date_groups)
+                        (if has_more {
+                            view! {
+                                GalleryLoadMoreSentinel(
+                                    visible_date_groups=visible_date_groups,
+                                    total_date_groups=total_date_groups,
+                                )
+                            }
+                        } else {
+                            view! {}
+                        })
+                    }
                 })
             }
             (move || {
@@ -700,6 +723,79 @@ struct GalleryLayoutRow {
 struct GalleryResizeObserver {
     observer: web_sys::ResizeObserver,
     _closure: Closure<dyn FnMut(js_sys::Array)>,
+}
+
+struct GalleryIntersectionObserver {
+    observer: web_sys::IntersectionObserver,
+    _closure: Closure<dyn FnMut(js_sys::Array, web_sys::IntersectionObserver)>,
+}
+
+fn next_visible_date_group_count(current: usize, total: usize) -> usize {
+    (current + 1).min(total)
+}
+
+impl Drop for GalleryIntersectionObserver {
+    fn drop(&mut self) {
+        self.observer.disconnect();
+    }
+}
+
+#[component(inline_props)]
+fn GalleryLoadMoreSentinel(visible_date_groups: Signal<usize>, total_date_groups: usize) -> View {
+    use std::{cell::RefCell, rc::Rc};
+
+    let sentinel_ref = create_node_ref();
+    let observer = Rc::new(RefCell::new(None::<GalleryIntersectionObserver>));
+
+    on_mount({
+        let observer = observer.clone();
+        move || {
+            let Some(element) = sentinel_ref
+                .try_get()
+                .and_then(|node| node.dyn_into::<web_sys::Element>().ok())
+            else {
+                return;
+            };
+
+            let closure = Closure::wrap(Box::new(
+                move |entries: js_sys::Array, _: web_sys::IntersectionObserver| {
+                    let Some(entry) = entries
+                        .get(0)
+                        .dyn_into::<web_sys::IntersectionObserverEntry>()
+                        .ok()
+                    else {
+                        return;
+                    };
+                    if entry.is_intersecting() {
+                        visible_date_groups.update(|count| {
+                            *count = next_visible_date_group_count(*count, total_date_groups);
+                        });
+                    }
+                },
+            )
+                as Box<dyn FnMut(js_sys::Array, web_sys::IntersectionObserver)>);
+            let options = web_sys::IntersectionObserverInit::new();
+            options.set_root_margin("800px 0px");
+            if let Ok(intersection_observer) = web_sys::IntersectionObserver::new_with_options(
+                closure.as_ref().unchecked_ref(),
+                &options,
+            ) {
+                intersection_observer.observe(&element);
+                observer.borrow_mut().replace(GalleryIntersectionObserver {
+                    observer: intersection_observer,
+                    _closure: closure,
+                });
+            }
+        }
+    });
+
+    on_cleanup(move || {
+        observer.borrow_mut().take();
+    });
+
+    view! {
+        div(class="gallery-sentinel", r#ref=sentinel_ref, aria-hidden="true")
+    }
 }
 
 impl Drop for GalleryResizeObserver {
@@ -1304,6 +1400,12 @@ mod tests {
     #[test]
     fn gallery_album_path_is_shared_by_routes_and_comments() {
         assert_eq!(gallery_album_path("earth-online"), "/gallery/earth-online");
+    }
+
+    #[test]
+    fn timeline_lazy_loading_reveals_one_date_group_at_a_time() {
+        assert_eq!(next_visible_date_group_count(1, 4), 2);
+        assert_eq!(next_visible_date_group_count(4, 4), 4);
     }
 
     #[test]
