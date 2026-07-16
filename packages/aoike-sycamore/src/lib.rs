@@ -11,6 +11,7 @@ use wasm_bindgen::{JsCast, closure::Closure};
 pub mod components {
     pub mod comment_overlay;
     pub mod giscus;
+    pub(crate) mod scroll_progress;
     pub mod waline;
 
     use sycamore::prelude::*;
@@ -45,7 +46,13 @@ pub mod components {
     }
 }
 
-use crate::{components::CommentSystem, layout::base::Header};
+use crate::{
+    components::{
+        CommentSystem,
+        scroll_progress::{DocumentScrollProgress, ScrollProgressContext},
+    },
+    layout::base::Header,
+};
 
 pub mod layout {
     pub mod base;
@@ -89,6 +96,7 @@ pub fn AoikeApp(
     gallery: &'static [GalleryCategory],
 ) -> View {
     provide_context(config);
+    provide_context(ScrollProgressContext::new());
 
     view! {
         Router(
@@ -306,6 +314,7 @@ pub fn Post(posts: &'static [PostData], slug: String) -> View {
 
     let content_html = post.content_html.as_str();
     view! {
+        DocumentScrollProgress()
         div(class="markdown w-full") {
             div(dangerously_set_inner_html=content_html)
         }
@@ -412,9 +421,17 @@ pub fn GalleryPage(categories: &'static [GalleryCategory], slug: String) -> View
 
 #[component(inline_props)]
 pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
+    use std::{cell::{Cell, RefCell}, rc::Rc};
+
     let show = create_signal(false);
     let current_index = create_signal(0usize);
-    let visible_date_groups = create_signal(1usize);
+    let progress = use_context::<ScrollProgressContext>();
+    let visible_date_groups = create_signal(0usize);
+    let total_date_groups = create_signal(0usize);
+    let scroll_percent = progress.percent;
+    let timeline_ref = create_node_ref();
+    let sentinel_ref = create_node_ref();
+    let timeline_observers = Rc::new(RefCell::new(None::<GalleryTimelineObservers>));
 
     // Pre-compute a static render description for each timeline date group.
     // Each entry contains the date, flat indices for loose images, and for each folder group
@@ -512,8 +529,210 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
 
     // Switching years starts the timeline from its newest date again.
     create_effect(move || {
-        selected_year.get();
-        visible_date_groups.set(1);
+        let total = selected_year
+            .get()
+            .and_then(|year| year_groups.iter().find(|yg| yg.year == year))
+            .map(|yg| yg.item_indices.len())
+            .unwrap_or_default();
+        total_date_groups.set(total);
+        visible_date_groups.set(total.min(1));
+        progress.active.set(total > 0);
+        scroll_percent.set(0.0);
+    });
+
+    on_mount({
+        let timeline_observers = timeline_observers.clone();
+        move || {
+            let Some(timeline) = timeline_ref
+                .try_get()
+                .and_then(|node| node.dyn_into::<web_sys::Element>().ok())
+            else {
+                return;
+            };
+            let Some(sentinel) = sentinel_ref
+                .try_get()
+                .and_then(|node| node.dyn_into::<web_sys::Element>().ok())
+            else {
+                return;
+            };
+
+            let measured_sentinel = sentinel.clone();
+            let load_more = Rc::new(move || {
+                let Some(viewport_height) = web_sys::window()
+                    .and_then(|window| window.inner_height().ok())
+                    .and_then(|height| height.as_f64())
+                else {
+                    return;
+                };
+                if measured_sentinel.get_bounding_client_rect().top() > viewport_height + 800.0 {
+                    return;
+                }
+                let total = total_date_groups.get_untracked();
+                visible_date_groups.update(|count| {
+                    *count = next_visible_date_group_count(*count, total);
+                });
+            });
+
+            let measured_timeline = timeline.clone();
+            let update_progress = Rc::new(move || {
+                let total = total_date_groups.get_untracked();
+                if total == 0 {
+                    scroll_percent.set(0.0);
+                    return;
+                }
+                if visible_date_groups.get_untracked() >= total {
+                    let document_end = web_sys::window().and_then(|window| {
+                        let scroll_y = window.scroll_y().ok()?;
+                        let viewport_height = window.inner_height().ok()?.as_f64()?;
+                        let document_height =
+                            window.document()?.document_element()?.scroll_height() as f64;
+                        Some(is_at_document_end(
+                            scroll_y,
+                            viewport_height,
+                            document_height,
+                        ))
+                    });
+                    if document_end == Some(true) {
+                        scroll_percent.set(100.0);
+                        return;
+                    }
+                }
+                let Ok(date_groups) = measured_timeline.query_selector_all(".gallery-date-group")
+                else {
+                    return;
+                };
+                let anchor_y = 58.0;
+                let mut progress = 0.0;
+                for index in 0..date_groups.length() {
+                    let Some(element) = date_groups
+                        .get(index)
+                        .and_then(|node| node.dyn_into::<web_sys::Element>().ok())
+                    else {
+                        continue;
+                    };
+                    let rect = element.get_bounding_client_rect();
+                    if rect.bottom() <= anchor_y {
+                        progress = (index as f64 + 1.0) / total as f64;
+                        continue;
+                    }
+                    if rect.top() <= anchor_y {
+                        let within_group = if rect.height() > 0.0 {
+                            ((anchor_y - rect.top()) / rect.height()).clamp(0.0, 1.0)
+                        } else {
+                            0.0
+                        };
+                        progress = (index as f64 + within_group) / total as f64;
+                    }
+                    break;
+                }
+                scroll_percent.set((progress * 100.0).clamp(0.0, 100.0));
+            });
+
+            let intersection_load_more = load_more.clone();
+            let intersection_closure = Closure::wrap(Box::new(
+                move |entries: js_sys::Array, _: web_sys::IntersectionObserver| {
+                    let intersects = entries.iter().any(|entry| {
+                        entry
+                            .dyn_into::<web_sys::IntersectionObserverEntry>()
+                            .ok()
+                            .is_some_and(|entry| entry.is_intersecting())
+                    });
+                    if intersects {
+                        intersection_load_more();
+                    }
+                },
+            )
+                as Box<dyn FnMut(js_sys::Array, web_sys::IntersectionObserver)>);
+            let intersection_options = web_sys::IntersectionObserverInit::new();
+            intersection_options.set_root_margin("800px 0px");
+            let Ok(intersection_observer) = web_sys::IntersectionObserver::new_with_options(
+                intersection_closure.as_ref().unchecked_ref(),
+                &intersection_options,
+            ) else {
+                return;
+            };
+            intersection_observer.observe(&sentinel);
+
+            let resize_load_more = load_more.clone();
+            let progress_frame_pending = Rc::new(Cell::new(false));
+            let schedule_progress_update = {
+                let progress_frame_pending = progress_frame_pending.clone();
+                let update_progress = update_progress.clone();
+                Rc::new(move || {
+                    if progress_frame_pending.replace(true) {
+                        return;
+                    }
+                    let progress_frame_pending = progress_frame_pending.clone();
+                    let callback_pending = progress_frame_pending.clone();
+                    let update_progress = update_progress.clone();
+                    let callback = Closure::once_into_js(move || {
+                        callback_pending.set(false);
+                        update_progress();
+                    });
+                    if let Some(window) = web_sys::window() {
+                        let _ = window.request_animation_frame(callback.unchecked_ref());
+                    } else {
+                        progress_frame_pending.set(false);
+                    }
+                })
+            };
+            let resize_schedule_progress = schedule_progress_update.clone();
+            let resize_closure = Closure::wrap(Box::new(move |_: js_sys::Array| {
+                resize_load_more();
+                resize_schedule_progress();
+            }) as Box<dyn FnMut(js_sys::Array)>);
+            let Ok(resize_observer) =
+                web_sys::ResizeObserver::new(resize_closure.as_ref().unchecked_ref())
+            else {
+                intersection_observer.disconnect();
+                return;
+            };
+            resize_observer.observe(&timeline);
+
+            let Some(window) = web_sys::window() else {
+                intersection_observer.disconnect();
+                resize_observer.disconnect();
+                return;
+            };
+            let scroll_load_more = load_more.clone();
+            let scroll_schedule_progress = schedule_progress_update.clone();
+            let scroll_closure = Closure::wrap(Box::new(move || {
+                scroll_load_more();
+                scroll_schedule_progress();
+            }) as Box<dyn FnMut()>);
+            if window
+                .add_event_listener_with_callback("scroll", scroll_closure.as_ref().unchecked_ref())
+                .is_err()
+            {
+                intersection_observer.disconnect();
+                resize_observer.disconnect();
+                return;
+            }
+
+            load_more();
+            update_progress();
+            timeline_observers
+                .borrow_mut()
+                .replace(GalleryTimelineObservers {
+                    intersection_observer,
+                    resize_observer,
+                    _intersection_closure: intersection_closure,
+                    _resize_closure: resize_closure,
+                    window,
+                    _scroll_closure: scroll_closure,
+                });
+        }
+    });
+
+    on_cleanup({
+        let timeline_observers = timeline_observers.clone();
+        move || {
+            timeline_observers.borrow_mut().take();
+            visible_date_groups.set(0);
+            total_date_groups.set(0);
+            progress.active.set(false);
+            scroll_percent.set(0.0);
+        }
     });
 
     // When navigating the lightbox, scroll the current card into view.
@@ -555,7 +774,7 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
                     }
                 }).collect::<Vec<_>>())
             }
-            div(class="gallery-timeline") {
+            div(class="gallery-timeline", r#ref=timeline_ref) {
                 (move || {
                     let items: Vec<&RenderDateGroup> = selected_year
                         .get()
@@ -564,8 +783,7 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
                         .unwrap_or_default();
                     let total_date_groups = items.len();
                     let visible_count = visible_date_groups.get().min(total_date_groups);
-                    let has_more = visible_count < total_date_groups;
-                    let date_groups = items.into_iter().take(visible_count).map(|item| {
+                    items.into_iter().take(visible_count).map(|item| {
                         view! {
                             div(class="gallery-date-group") {
                                 h2(class="gallery-date-heading lxgw") { (format_date(item.date)) }
@@ -606,21 +824,17 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
                                 }
                             }
                         }
-                    }).collect::<Vec<_>>();
-                    view! {
-                        (date_groups)
-                        (if has_more {
-                            view! {
-                                GalleryLoadMoreSentinel(
-                                    visible_date_groups=visible_date_groups,
-                                    total_date_groups=total_date_groups,
-                                )
-                            }
-                        } else {
-                            view! {}
-                        })
-                    }
+                    }).collect::<Vec<_>>()
                 })
+                div(
+                    class=move || if visible_date_groups.get() < total_date_groups.get() {
+                        "gallery-sentinel"
+                    } else {
+                        "gallery-sentinel hidden"
+                    },
+                    r#ref=sentinel_ref,
+                    aria-hidden="true",
+                )
             }
             (move || {
                 if show.get() {
@@ -725,76 +939,32 @@ struct GalleryResizeObserver {
     _closure: Closure<dyn FnMut(js_sys::Array)>,
 }
 
-struct GalleryIntersectionObserver {
-    observer: web_sys::IntersectionObserver,
-    _closure: Closure<dyn FnMut(js_sys::Array, web_sys::IntersectionObserver)>,
+struct GalleryTimelineObservers {
+    intersection_observer: web_sys::IntersectionObserver,
+    resize_observer: web_sys::ResizeObserver,
+    _intersection_closure: Closure<dyn FnMut(js_sys::Array, web_sys::IntersectionObserver)>,
+    _resize_closure: Closure<dyn FnMut(js_sys::Array)>,
+    window: web_sys::Window,
+    _scroll_closure: Closure<dyn FnMut()>,
 }
 
 fn next_visible_date_group_count(current: usize, total: usize) -> usize {
     (current + 1).min(total)
 }
 
-impl Drop for GalleryIntersectionObserver {
-    fn drop(&mut self) {
-        self.observer.disconnect();
-    }
+fn is_at_document_end(scroll_y: f64, viewport_height: f64, document_height: f64) -> bool {
+    let max_scroll_y = (document_height - viewport_height).max(0.0);
+    max_scroll_y > 0.0 && scroll_y >= max_scroll_y - 2.0
 }
 
-#[component(inline_props)]
-fn GalleryLoadMoreSentinel(visible_date_groups: Signal<usize>, total_date_groups: usize) -> View {
-    use std::{cell::RefCell, rc::Rc};
-
-    let sentinel_ref = create_node_ref();
-    let observer = Rc::new(RefCell::new(None::<GalleryIntersectionObserver>));
-
-    on_mount({
-        let observer = observer.clone();
-        move || {
-            let Some(element) = sentinel_ref
-                .try_get()
-                .and_then(|node| node.dyn_into::<web_sys::Element>().ok())
-            else {
-                return;
-            };
-
-            let closure = Closure::wrap(Box::new(
-                move |entries: js_sys::Array, _: web_sys::IntersectionObserver| {
-                    let Some(entry) = entries
-                        .get(0)
-                        .dyn_into::<web_sys::IntersectionObserverEntry>()
-                        .ok()
-                    else {
-                        return;
-                    };
-                    if entry.is_intersecting() {
-                        visible_date_groups.update(|count| {
-                            *count = next_visible_date_group_count(*count, total_date_groups);
-                        });
-                    }
-                },
-            )
-                as Box<dyn FnMut(js_sys::Array, web_sys::IntersectionObserver)>);
-            let options = web_sys::IntersectionObserverInit::new();
-            options.set_root_margin("800px 0px");
-            if let Ok(intersection_observer) = web_sys::IntersectionObserver::new_with_options(
-                closure.as_ref().unchecked_ref(),
-                &options,
-            ) {
-                intersection_observer.observe(&element);
-                observer.borrow_mut().replace(GalleryIntersectionObserver {
-                    observer: intersection_observer,
-                    _closure: closure,
-                });
-            }
-        }
-    });
-
-    on_cleanup(move || {
-        observer.borrow_mut().take();
-    });
-
-    view! {
-        div(class="gallery-sentinel", r#ref=sentinel_ref, aria-hidden="true")
+impl Drop for GalleryTimelineObservers {
+    fn drop(&mut self) {
+        self.intersection_observer.disconnect();
+        self.resize_observer.disconnect();
+        let _ = self.window.remove_event_listener_with_callback(
+            "scroll",
+            self._scroll_closure.as_ref().unchecked_ref(),
+        );
     }
 }
 
@@ -1406,6 +1576,14 @@ mod tests {
     fn timeline_lazy_loading_reveals_one_date_group_at_a_time() {
         assert_eq!(next_visible_date_group_count(1, 4), 2);
         assert_eq!(next_visible_date_group_count(4, 4), 4);
+    }
+
+    #[test]
+    fn gallery_progress_reaches_the_document_end_with_subpixel_tolerance() {
+        assert!(is_at_document_end(1400.0, 600.0, 2000.0));
+        assert!(is_at_document_end(1398.5, 600.0, 2000.0));
+        assert!(!is_at_document_end(1397.0, 600.0, 2000.0));
+        assert!(!is_at_document_end(0.0, 800.0, 700.0));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use sycamore::prelude::*;
 
-use crate::ConfigContext;
+use crate::{ConfigContext, components::scroll_progress::ScrollProgressControls};
 
 #[component]
 pub fn Header() -> View {
@@ -47,6 +47,7 @@ pub fn Header() -> View {
                     }
                 }))
             }
+            ScrollProgressControls()
         }
     }
 }
