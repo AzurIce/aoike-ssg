@@ -1,17 +1,78 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use anyhow::Context;
+use anyhow::{Context, Result, bail};
 use exif::{Exif, In, Reader, Tag, Value};
+use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
+use serde::Deserialize;
 use walkdir::WalkDir;
 
-use crate::{time::Date, GalleryCategory, GalleryGroup, GalleryImage, GalleryTimelineItem};
+use crate::{GalleryCategory, GalleryGroup, GalleryImage, GalleryTimelineItem, time::Date};
 
 const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif"];
+const PATH_SEGMENT_ENCODE_SET: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'#')
+    .add(b'%')
+    .add(b'/')
+    .add(b':')
+    .add(b'<')
+    .add(b'>')
+    .add(b'?')
+    .add(b'[')
+    .add(b'\\')
+    .add(b']')
+    .add(b'^')
+    .add(b'`')
+    .add(b'{')
+    .add(b'|')
+    .add(b'}');
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GalleryBuildMode {
+    Embed,
+    ShadowTos,
+}
+
+pub struct GalleryBuildOutput {
+    pub categories: Vec<GalleryCategory>,
+    pub trunk_assets: String,
+}
+
+pub fn build_gallery(dir: impl AsRef<Path>, mode: GalleryBuildMode) -> Result<GalleryBuildOutput> {
+    let dir = dir.as_ref();
+    let resolver = GalleryUrlResolver::new(dir, mode)?;
+    let categories = parse_gallery_with_resolver(dir, &resolver)?;
+    let trunk_assets = match mode {
+        GalleryBuildMode::Embed => format!(
+            r#"<link rel="copy-dir" href="{}/" data-trunk>"#,
+            path_to_url(dir)?
+        ),
+        GalleryBuildMode::ShadowTos => String::new(),
+    };
+    Ok(GalleryBuildOutput {
+        categories,
+        trunk_assets,
+    })
+}
 
 pub fn parse_gallery(dir: impl AsRef<Path>) -> Vec<GalleryCategory> {
     let dir = dir.as_ref();
     if !dir.exists() {
         return Vec::new();
+    }
+
+    let resolver = GalleryUrlResolver::embedded_with_prefix(dir, "/static/gallery".to_string());
+    parse_gallery_with_resolver(dir, &resolver)
+        .expect("embedded gallery URL generation must succeed")
+}
+
+fn parse_gallery_with_resolver(
+    dir: &Path,
+    resolver: &GalleryUrlResolver,
+) -> Result<Vec<GalleryCategory>> {
+    if !dir.exists() {
+        bail!("gallery source directory does not exist: {}", dir.display());
     }
 
     let mut categories = Vec::new();
@@ -22,24 +83,22 @@ pub fn parse_gallery(dir: impl AsRef<Path>) -> Vec<GalleryCategory> {
             continue;
         }
 
-        if let Some(category) = parse_category(&path) {
+        if let Some(category) = parse_category(&path, resolver)? {
             categories.push(category);
         }
     }
 
     categories.sort_by(|a, b| a.name.cmp(&b.name));
-    categories
+    Ok(categories)
 }
 
-fn parse_category(path: &Path) -> Option<GalleryCategory> {
+fn parse_category(path: &Path, resolver: &GalleryUrlResolver) -> Result<Option<GalleryCategory>> {
     let name = path
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("unnamed")
         .to_string();
     let slug = slug::slugify(&name);
-    let src_prefix = format!("/static/gallery/{}", name);
-
     let description_html = path
         .join("index.md")
         .exists()
@@ -53,13 +112,13 @@ fn parse_category(path: &Path) -> Option<GalleryCategory> {
         let entry_path = entry.path();
 
         if entry_path.is_dir() {
-            if let Some(group) = parse_group(&entry_path, path, &src_prefix) {
+            if let Some(group) = parse_group(&entry_path, resolver)? {
                 if !group.images.is_empty() {
                     groups.push(group);
                 }
             }
         } else if is_image(&entry_path) {
-            if let Some(image) = parse_image(&entry_path, path, &src_prefix) {
+            if let Some(image) = parse_image(&entry_path, resolver)? {
                 loose_images.push(image);
             }
         }
@@ -69,21 +128,17 @@ fn parse_category(path: &Path) -> Option<GalleryCategory> {
 
     let timeline = build_timeline(&loose_images, &groups);
 
-    Some(GalleryCategory {
+    Ok(Some(GalleryCategory {
         name,
         slug,
         description_html,
         loose_images,
         groups,
         timeline,
-    })
+    }))
 }
 
-fn parse_group(
-    path: &Path,
-    category_root: &Path,
-    category_src_prefix: &str,
-) -> Option<GalleryGroup> {
+fn parse_group(path: &Path, resolver: &GalleryUrlResolver) -> Result<Option<GalleryGroup>> {
     let name = path
         .file_name()
         .and_then(|s| s.to_str())
@@ -100,17 +155,20 @@ fn parse_group(
         .into_iter()
         .flatten()
         .filter(|e| e.file_type().is_file() && is_image(e.path()))
-        .filter_map(|e| parse_image(e.path(), category_root, category_src_prefix))
+        .map(|e| parse_image(e.path(), resolver))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
         .collect();
 
     // Preserve filesystem order within a group; don't sort by time.
     // (If the user wants a specific order, they can rename files.)
-    Some(GalleryGroup {
+    Ok(Some(GalleryGroup {
         name,
         slug,
         description_html,
         images,
-    })
+    }))
 }
 
 fn parse_markdown_file(path: &Path) -> Option<String> {
@@ -138,7 +196,11 @@ fn build_timeline(
     // Loose images grouped by date
     for (idx, image) in loose_images.iter().enumerate() {
         let date = image.created.map(|dt| dt.date());
-        by_date.entry(date).or_default().loose_image_indices.push(idx);
+        by_date
+            .entry(date)
+            .or_default()
+            .loose_image_indices
+            .push(idx);
     }
 
     // Sort loose images within each date by datetime descending
@@ -178,7 +240,11 @@ fn build_timeline(
     });
 
     for (date, group_idx) in group_entries {
-        by_date.entry(date).or_default().folder_group_indices.push(group_idx);
+        by_date
+            .entry(date)
+            .or_default()
+            .folder_group_indices
+            .push(group_idx);
     }
 
     // Convert to items, sorted descending by date; None (unknown) goes last.
@@ -207,9 +273,9 @@ fn is_image(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn parse_image(path: &Path, source_root: &Path, src_prefix: &str) -> Option<GalleryImage> {
+fn parse_image(path: &Path, resolver: &GalleryUrlResolver) -> Result<Option<GalleryImage>> {
     if !is_image(path) {
-        return None;
+        return Ok(None);
     }
 
     let file_name = path
@@ -218,13 +284,17 @@ fn parse_image(path: &Path, source_root: &Path, src_prefix: &str) -> Option<Gall
         .unwrap_or("image")
         .to_string();
 
-    let src = gallery_image_src(path, source_root, src_prefix)?;
+    let src = resolver.resolve(path)?;
 
     let exif = read_exif(path).ok();
     let (width, height) = exif
         .as_ref()
         .and_then(image_dimensions_from_exif)
-        .or_else(|| imagesize::size(path).ok().map(|s| (s.width as u32, s.height as u32)))
+        .or_else(|| {
+            imagesize::size(path)
+                .ok()
+                .map(|s| (s.width as u32, s.height as u32))
+        })
         .unwrap_or((0, 0));
 
     let title = exif
@@ -241,20 +311,21 @@ fn parse_image(path: &Path, source_root: &Path, src_prefix: &str) -> Option<Gall
     let offset_original = exif
         .as_ref()
         .and_then(|e| exif_string(e, Tag::OffsetTimeOriginal));
-    let offset_datetime = exif
-        .as_ref()
-        .and_then(|e| exif_string(e, Tag::OffsetTime));
+    let offset_datetime = exif.as_ref().and_then(|e| exif_string(e, Tag::OffsetTime));
 
     let created = exif
         .as_ref()
         .and_then(|e| exif_datetime(e, Tag::DateTimeOriginal, offset_original.as_deref()))
-        .or_else(|| exif.as_ref().and_then(|e| exif_datetime(e, Tag::DateTime, offset_datetime.as_deref())))
+        .or_else(|| {
+            exif.as_ref()
+                .and_then(|e| exif_datetime(e, Tag::DateTime, offset_datetime.as_deref()))
+        })
         .or_else(|| datetime_from_filename(&file_name))
         .or_else(|| file_created_datetime(path));
 
     let (rating, label) = read_xmp_metadata(path);
 
-    Some(GalleryImage {
+    Ok(Some(GalleryImage {
         src,
         thumb_src: None,
         width,
@@ -264,17 +335,202 @@ fn parse_image(path: &Path, source_root: &Path, src_prefix: &str) -> Option<Gall
         created,
         rating,
         label,
-    })
+    }))
 }
 
-fn gallery_image_src(path: &Path, source_root: &Path, src_prefix: &str) -> Option<String> {
-    let relative_path = path.strip_prefix(source_root).ok()?;
-    let relative_url = relative_path
-        .components()
-        .map(|component| component.as_os_str().to_str())
-        .collect::<Option<Vec<_>>>()?
-        .join("/");
-    Some(format!("{}/{}", src_prefix, relative_url))
+struct GalleryUrlResolver {
+    source_root: PathBuf,
+    kind: GalleryUrlResolverKind,
+}
+
+enum GalleryUrlResolverKind {
+    Embedded { public_prefix: String },
+    ShadowTos(ShadowTosResolver),
+}
+
+impl GalleryUrlResolver {
+    fn new(source_root: &Path, mode: GalleryBuildMode) -> Result<Self> {
+        match mode {
+            GalleryBuildMode::Embed => Self::embedded(source_root),
+            GalleryBuildMode::ShadowTos => Ok(Self {
+                source_root: source_root.to_path_buf(),
+                kind: GalleryUrlResolverKind::ShadowTos(ShadowTosResolver::discover(source_root)?),
+            }),
+        }
+    }
+
+    fn embedded(source_root: &Path) -> Result<Self> {
+        let directory_name = source_root
+            .file_name()
+            .context("gallery source directory has no name")?
+            .to_str()
+            .context("gallery source directory name is not UTF-8")?;
+        Ok(Self::embedded_with_prefix(
+            source_root,
+            format!("/{}", encode_path_segment(directory_name)),
+        ))
+    }
+
+    fn embedded_with_prefix(source_root: &Path, public_prefix: String) -> Self {
+        Self {
+            source_root: source_root.to_path_buf(),
+            kind: GalleryUrlResolverKind::Embedded { public_prefix },
+        }
+    }
+
+    fn resolve(&self, path: &Path) -> Result<String> {
+        match &self.kind {
+            GalleryUrlResolverKind::Embedded { public_prefix } => {
+                let relative = path.strip_prefix(&self.source_root).with_context(|| {
+                    format!(
+                        "gallery image {} is outside {}",
+                        path.display(),
+                        self.source_root.display()
+                    )
+                })?;
+                Ok(format!("{}/{}", public_prefix, path_to_url(relative)?))
+            }
+            GalleryUrlResolverKind::ShadowTos(resolver) => resolver.resolve(path),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct ShadowConfig {
+    name: String,
+    backend: ShadowBackendConfig,
+}
+
+#[derive(Deserialize)]
+struct ShadowBackendConfig {
+    #[serde(rename = "type")]
+    kind: String,
+    endpoint: String,
+    bucket: String,
+    #[serde(default)]
+    prefix: String,
+}
+
+#[derive(Deserialize)]
+struct ShadowRefDocument {
+    oid: String,
+}
+
+struct ShadowTosResolver {
+    repository_root: PathBuf,
+    refs_root: PathBuf,
+    public_base_url: String,
+    object_prefix: String,
+}
+
+impl ShadowTosResolver {
+    fn discover(source_root: &Path) -> Result<Self> {
+        let source_root = source_root
+            .canonicalize()
+            .with_context(|| format!("failed to resolve gallery path {}", source_root.display()))?;
+        let repository_root = source_root
+            .ancestors()
+            .find(|ancestor| ancestor.join("shadow.toml").is_file())
+            .context("could not find shadow.toml above gallery source directory")?
+            .to_path_buf();
+        let config_path = repository_root.join("shadow.toml");
+        let config: ShadowConfig = toml::from_str(
+            &std::fs::read_to_string(&config_path)
+                .with_context(|| format!("failed to read {}", config_path.display()))?,
+        )
+        .with_context(|| format!("failed to parse {}", config_path.display()))?;
+        if config.backend.kind != "volcengine_tos" {
+            bail!("ShadowTos requires a volcengine_tos backend");
+        }
+
+        let public_base_url =
+            tos_public_base_url(&config.backend.endpoint, &config.backend.bucket)?;
+        let object_prefix = config
+            .backend
+            .prefix
+            .trim_matches('/')
+            .split('/')
+            .filter(|part| !part.is_empty())
+            .chain(std::iter::once(config.name.as_str()))
+            .map(encode_path_segment)
+            .collect::<Vec<_>>()
+            .join("/");
+
+        Ok(Self {
+            refs_root: repository_root.join(".shadow").join("refs"),
+            repository_root,
+            public_base_url,
+            object_prefix,
+        })
+    }
+
+    fn resolve(&self, path: &Path) -> Result<String> {
+        let absolute = path
+            .canonicalize()
+            .with_context(|| format!("failed to resolve gallery image {}", path.display()))?;
+        let relative = absolute
+            .strip_prefix(&self.repository_root)
+            .with_context(|| {
+                format!(
+                    "gallery image {} is outside the Shadow repository",
+                    path.display()
+                )
+            })?;
+        let mut ref_path = self.refs_root.join(relative);
+        let file_name = ref_path
+            .file_name()
+            .context("gallery image has no file name")?
+            .to_string_lossy();
+        ref_path.set_file_name(format!("{file_name}.ref"));
+        let reference: ShadowRefDocument = toml::from_str(
+            &std::fs::read_to_string(&ref_path)
+                .with_context(|| format!("failed to read Shadow ref {}", ref_path.display()))?,
+        )
+        .with_context(|| format!("failed to parse Shadow ref {}", ref_path.display()))?;
+        let oid = reference
+            .oid
+            .strip_prefix("sha256:")
+            .context("Shadow ref object ID must start with sha256:")?;
+        if oid.len() != 64 || !oid.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            bail!("invalid SHA-256 object ID in {}", ref_path.display());
+        }
+
+        Ok(format!(
+            "{}/{}/objects/sha256/{}/{}",
+            self.public_base_url,
+            self.object_prefix,
+            &oid[..2],
+            &oid[2..]
+        ))
+    }
+}
+
+fn tos_public_base_url(endpoint: &str, bucket: &str) -> Result<String> {
+    let endpoint = endpoint.trim_end_matches('/');
+    let (scheme, authority) = endpoint
+        .split_once("://")
+        .context("TOS endpoint must include a URL scheme")?;
+    if authority.is_empty() || authority.contains('/') {
+        bail!("TOS endpoint must not contain a path");
+    }
+    Ok(format!("{}://{}.{}", scheme, bucket, authority))
+}
+
+fn path_to_url(path: &Path) -> Result<String> {
+    path.components()
+        .map(|component| {
+            component
+                .as_os_str()
+                .to_str()
+                .context("gallery path is not UTF-8")
+                .map(encode_path_segment)
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(|components| components.join("/"))
+}
+
+fn encode_path_segment(segment: &str) -> String {
+    utf8_percent_encode(segment, PATH_SEGMENT_ENCODE_SET).to_string()
 }
 
 fn read_exif(path: &Path) -> anyhow::Result<Exif> {
@@ -294,10 +550,10 @@ fn image_dimensions_from_exif(exif: &Exif) -> Option<(u32, u32)> {
         }
     }
 
-    let width = parse_u32(exif, Tag::ImageWidth)
-        .or_else(|| parse_u32(exif, Tag::PixelXDimension))?;
-    let height = parse_u32(exif, Tag::ImageLength)
-        .or_else(|| parse_u32(exif, Tag::PixelYDimension))?;
+    let width =
+        parse_u32(exif, Tag::ImageWidth).or_else(|| parse_u32(exif, Tag::PixelXDimension))?;
+    let height =
+        parse_u32(exif, Tag::ImageLength).or_else(|| parse_u32(exif, Tag::PixelYDimension))?;
     Some((width, height))
 }
 
@@ -377,11 +633,7 @@ fn exif_string(exif: &Exif, tag: Tag) -> Option<String> {
     }
 }
 
-fn exif_datetime(
-    exif: &Exif,
-    tag: Tag,
-    offset: Option<&str>,
-) -> Option<crate::time::UtcDateTime> {
+fn exif_datetime(exif: &Exif, tag: Tag, offset: Option<&str>) -> Option<crate::time::UtcDateTime> {
     let s = exif_string(exif, tag)?;
     parse_exif_datetime(&s, offset)
 }
@@ -415,7 +667,10 @@ fn file_created_datetime(path: &Path) -> Option<crate::time::UtcDateTime> {
     let metadata = std::fs::metadata(path).ok()?;
     // Prefer modification time: it is usually preserved when files are copied,
     // whereas creation time on Windows is often refreshed to the copy time.
-    let time = metadata.modified().ok().or_else(|| metadata.created().ok())?;
+    let time = metadata
+        .modified()
+        .ok()
+        .or_else(|| metadata.created().ok())?;
     let duration = time.duration_since(std::time::UNIX_EPOCH).ok()?;
     crate::time::UtcDateTime::from_unix_timestamp(duration.as_secs() as i64).ok()
 }
@@ -463,7 +718,9 @@ fn parse_exif_datetime(s: &str, offset: Option<&str>) -> Option<crate::time::Utc
     let offset = offset
         .and_then(parse_exif_offset)
         .unwrap_or(crate::time::UtcOffset::UTC);
-    let utc_dt = local_dt.assume_offset(offset).to_offset(crate::time::UtcOffset::UTC);
+    let utc_dt = local_dt
+        .assume_offset(offset)
+        .to_offset(crate::time::UtcOffset::UTC);
 
     Some(crate::time::UtcDateTime::new(utc_dt.date(), utc_dt.time()))
 }
@@ -665,22 +922,30 @@ pub fn generate_gallery_code(categories: Vec<GalleryCategory>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{gallery_image_src, parse_xmp_label, parse_xmp_rating};
+    use super::{GalleryUrlResolver, parse_xmp_label, parse_xmp_rating, tos_public_base_url};
     use std::path::Path;
 
     #[test]
     fn nested_gallery_image_src_keeps_all_subdirectories() {
-        let root = Path::new("static").join("gallery").join("地球 OL");
+        let root = Path::new("gallery");
         let image = root
+            .join("地球 OL")
             .join("2025-10-25 灵山彗星银河流星")
             .join("银河小延时")
             .join("DSC01730_gallery.jpg");
+        let resolver = GalleryUrlResolver::embedded(&root).unwrap();
 
         assert_eq!(
-            gallery_image_src(&image, &root, "/static/gallery/地球 OL").as_deref(),
-            Some(
-                "/static/gallery/地球 OL/2025-10-25 灵山彗星银河流星/银河小延时/DSC01730_gallery.jpg"
-            )
+            resolver.resolve(&image).unwrap(),
+            "/gallery/%E5%9C%B0%E7%90%83%20OL/2025-10-25%20%E7%81%B5%E5%B1%B1%E5%BD%97%E6%98%9F%E9%93%B6%E6%B2%B3%E6%B5%81%E6%98%9F/%E9%93%B6%E6%B2%B3%E5%B0%8F%E5%BB%B6%E6%97%B6/DSC01730_gallery.jpg"
+        );
+    }
+
+    #[test]
+    fn builds_virtual_hosted_tos_base_url() {
+        assert_eq!(
+            tos_public_base_url("https://tos-cn-beijing.volces.com", "azurice-shadow").unwrap(),
+            "https://azurice-shadow.tos-cn-beijing.volces.com"
         );
     }
 
