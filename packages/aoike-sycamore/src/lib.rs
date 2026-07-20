@@ -3,6 +3,8 @@ pub mod build;
 
 pub mod docsgen;
 
+use std::{cell::Cell, rc::Rc};
+
 use aoike::{GalleryCategory, GalleryImage, GalleryTimelineItem, PostData};
 use sycamore::prelude::*;
 use sycamore_router::{HistoryIntegration, Route, Router, navigate, navigate_replace};
@@ -421,7 +423,7 @@ pub fn GalleryPage(categories: &'static [GalleryCategory], slug: String) -> View
 
 #[component(inline_props)]
 pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
-    use std::{cell::{Cell, RefCell}, rc::Rc};
+    use std::cell::RefCell;
 
     let show = create_signal(false);
     let current_index = create_signal(0usize);
@@ -562,16 +564,39 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
                     .and_then(|window| window.inner_height().ok())
                     .and_then(|height| height.as_f64())
                 else {
-                    return;
+                    return false;
                 };
-                if measured_sentinel.get_bounding_client_rect().top() > viewport_height + 800.0 {
-                    return;
+                if !is_gallery_sentinel_near(
+                    measured_sentinel.get_bounding_client_rect().top(),
+                    viewport_height,
+                ) {
+                    return false;
                 }
                 let total = total_date_groups.get_untracked();
+                let current = visible_date_groups.get_untracked();
+                if current >= total {
+                    return false;
+                }
                 visible_date_groups.update(|count| {
                     *count = next_visible_date_group_count(*count, total);
                 });
+                true
             });
+
+            let load_frame_pending = Rc::new(Cell::new(false));
+            let load_active = Rc::new(Cell::new(true));
+            let schedule_load_more = {
+                let load_more = load_more.clone();
+                let load_frame_pending = load_frame_pending.clone();
+                let load_active = load_active.clone();
+                Rc::new(move || {
+                    schedule_gallery_load(
+                        load_more.clone(),
+                        load_frame_pending.clone(),
+                        load_active.clone(),
+                    );
+                })
+            };
 
             let measured_timeline = timeline.clone();
             let update_progress = Rc::new(move || {
@@ -628,7 +653,7 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
                 scroll_percent.set((progress * 100.0).clamp(0.0, 100.0));
             });
 
-            let intersection_load_more = load_more.clone();
+            let intersection_schedule_load = schedule_load_more.clone();
             let intersection_closure = Closure::wrap(Box::new(
                 move |entries: js_sys::Array, _: web_sys::IntersectionObserver| {
                     let intersects = entries.iter().any(|entry| {
@@ -638,7 +663,7 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
                             .is_some_and(|entry| entry.is_intersecting())
                     });
                     if intersects {
-                        intersection_load_more();
+                        intersection_schedule_load();
                     }
                 },
             )
@@ -653,7 +678,6 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
             };
             intersection_observer.observe(&sentinel);
 
-            let resize_load_more = load_more.clone();
             let progress_frame_pending = Rc::new(Cell::new(false));
             let schedule_progress_update = {
                 let progress_frame_pending = progress_frame_pending.clone();
@@ -676,9 +700,10 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
                     }
                 })
             };
+            let resize_schedule_load = schedule_load_more.clone();
             let resize_schedule_progress = schedule_progress_update.clone();
             let resize_closure = Closure::wrap(Box::new(move |_: js_sys::Array| {
-                resize_load_more();
+                resize_schedule_load();
                 resize_schedule_progress();
             }) as Box<dyn FnMut(js_sys::Array)>);
             let Ok(resize_observer) =
@@ -694,10 +719,10 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
                 resize_observer.disconnect();
                 return;
             };
-            let scroll_load_more = load_more.clone();
+            let scroll_schedule_load = schedule_load_more.clone();
             let scroll_schedule_progress = schedule_progress_update.clone();
             let scroll_closure = Closure::wrap(Box::new(move || {
-                scroll_load_more();
+                scroll_schedule_load();
                 scroll_schedule_progress();
             }) as Box<dyn FnMut()>);
             if window
@@ -709,7 +734,7 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
                 return;
             }
 
-            load_more();
+            schedule_load_more();
             update_progress();
             timeline_observers
                 .borrow_mut()
@@ -720,6 +745,7 @@ pub fn GalleryCategoryTimeline(category: &'static GalleryCategory) -> View {
                     _resize_closure: resize_closure,
                     window,
                     _scroll_closure: scroll_closure,
+                    load_active,
                 });
         }
     });
@@ -946,10 +972,51 @@ struct GalleryTimelineObservers {
     _resize_closure: Closure<dyn FnMut(js_sys::Array)>,
     window: web_sys::Window,
     _scroll_closure: Closure<dyn FnMut()>,
+    load_active: Rc<Cell<bool>>,
 }
+
+const GALLERY_PREFETCH_DISTANCE: f64 = 800.0;
 
 fn next_visible_date_group_count(current: usize, total: usize) -> usize {
     (current + 1).min(total)
+}
+
+fn is_gallery_sentinel_near(sentinel_top: f64, viewport_height: f64) -> bool {
+    sentinel_top <= viewport_height + GALLERY_PREFETCH_DISTANCE
+}
+
+fn schedule_gallery_load(
+    load_more: Rc<dyn Fn() -> bool>,
+    frame_pending: Rc<Cell<bool>>,
+    active: Rc<Cell<bool>>,
+) {
+    if !active.get() || frame_pending.replace(true) {
+        return;
+    }
+
+    let callback_pending = frame_pending.clone();
+    let callback_active = active.clone();
+    let callback_load_more = load_more.clone();
+    let callback = Closure::once_into_js(move || {
+        callback_pending.set(false);
+        if !callback_active.get() {
+            return;
+        }
+        if callback_load_more() {
+            schedule_gallery_load(callback_load_more, callback_pending, callback_active);
+        }
+    });
+
+    if let Some(window) = web_sys::window() {
+        if window
+            .request_animation_frame(callback.unchecked_ref())
+            .is_err()
+        {
+            frame_pending.set(false);
+        }
+    } else {
+        frame_pending.set(false);
+    }
 }
 
 fn is_at_document_end(scroll_y: f64, viewport_height: f64, document_height: f64) -> bool {
@@ -959,6 +1026,7 @@ fn is_at_document_end(scroll_y: f64, viewport_height: f64, document_height: f64)
 
 impl Drop for GalleryTimelineObservers {
     fn drop(&mut self) {
+        self.load_active.set(false);
         self.intersection_observer.disconnect();
         self.resize_observer.disconnect();
         let _ = self.window.remove_event_listener_with_callback(
@@ -1576,6 +1644,12 @@ mod tests {
     fn timeline_lazy_loading_reveals_one_date_group_at_a_time() {
         assert_eq!(next_visible_date_group_count(1, 4), 2);
         assert_eq!(next_visible_date_group_count(4, 4), 4);
+    }
+
+    #[test]
+    fn gallery_prefetch_checks_the_post_render_sentinel_position() {
+        assert!(is_gallery_sentinel_near(1400.0, 600.0));
+        assert!(!is_gallery_sentinel_near(1400.1, 600.0));
     }
 
     #[test]
